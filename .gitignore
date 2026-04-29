@@ -1,0 +1,6 @@
+.cache/
+build/
+.loglogin
+*.local
+CMakeUserPresets.json
+compile_commands.json
