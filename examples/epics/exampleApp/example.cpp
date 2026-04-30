@@ -17,23 +17,33 @@ void signal_handler(int signal) {
 int main(int argc, char* argv[]) {
     std::signal(SIGINT, signal_handler);
 
-    ezec::Context ctxt("ca");
+    // Get PV name from command line args
+    if (argc != 2) {
+        std::cout << "Usage: example <pv name>\n";
+        return EXIT_SUCCESS;
+    }
+    const std::string pv_name = argv[1];
 
-    ezec::CAChannel m1_rbv("nmarks:m1.RBV");
+    // Create Channel Access context
+    ezec::Context ctxt;
 
-    double rbv = 0.0;
-    std::string rbv_str;
-    double rbv2 = 0.0;
+    ezec::ChannelGroup group;
+    group.add(pv_name);
 
-    m1_rbv.bind(rbv);
-    m1_rbv.bind(rbv_str);
-    m1_rbv.bind(rbv2);
+    // User variables to store PV value from monitor
+    std::string val_string;
+    double val_double = 0.0;
+
+    // Bind user variables to monitor
+    group.bind(val_string, pv_name);
+    group.bind(val_double, pv_name);
 
     while (g_signal_caught == 0) {
-        if (m1_rbv.sync()) {
-            std::cout << "rbv=" << rbv
-                      << " str=" << rbv_str
-                      << " rbv2=" << rbv2 << std::endl;
+
+        // If there is new data, print it
+        if (group.sync()) {
+            std::cout << pv_name + "[string] = " << val_string << "\n";
+            std::cout << pv_name + "[double] = " << val_double << "\n\n";
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }

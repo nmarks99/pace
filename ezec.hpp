@@ -6,6 +6,7 @@
 #include <string>
 #include <variant>
 #include <vector>
+#include <unordered_map>
 
 #include "cadef.h"
 
@@ -41,13 +42,13 @@ std::optional<T> convert(const MonitorVariant& v) {
 
 struct MonitorSlotBase {
     virtual ~MonitorSlotBase() = default;
-    virtual void publish(const MonitorVariant& staged) = 0;
+    virtual void copy_to_targets(const MonitorVariant& staged) = 0;
 };
 
 template <typename T>
 struct MonitorSlot : MonitorSlotBase {
     std::vector<T*> targets;
-    void publish(const MonitorVariant& staged) override {
+    void copy_to_targets(const MonitorVariant& staged) override {
         if (auto val = convert<T>(staged)) {
             for (T* t : targets) {
                 *t = *val;
@@ -85,7 +86,7 @@ class ChannelBase {
         }
         std::lock_guard lock(mutex_);
         for (auto& slot : slots_) {
-            slot->publish(staged_value_);
+            slot->copy_to_targets(staged_value_);
         }
         new_data_.store(false, std::memory_order_relaxed);
         return true;
@@ -180,25 +181,57 @@ class CAChannel : public ChannelBase {
 
 class Context {
   public:
-    Context(const std::string& provider = "ca") : provider_(provider) {
-        if (provider_ == "ca") {
-            SEVCHK(ca_context_create(ca_enable_preemptive_callback), "ca_context_create");
-        } else if (provider_ == "pva") {
-            throw std::runtime_error("pva not yet implemented");
-        } else {
-            throw std::runtime_error("Unknown provider " + provider);
-        }
+    Context() {
+        SEVCHK(ca_context_create(ca_enable_preemptive_callback), "ca_context_create");
     }
-    ~Context() {
-        if (provider_ == "ca") {
-            ca_context_destroy();
-        } else if (provider_ == "pva") {
-            // TODO: destroy pva context
+    ~Context() { ca_context_destroy(); }
+
+    Context(const Context&) = delete;
+    Context& operator=(const Context&) = delete;
+};
+
+class ChannelGroup {
+  public:
+    void add(const std::string& pv_name) {
+        std::lock_guard lock(mutex_);
+        if (channel_map_.count(pv_name) == 0) {
+            channel_map_.emplace(pv_name, std::make_unique<CAChannel>(pv_name));
         }
     }
 
+    bool sync() {
+        std::lock_guard lock(mutex_);
+        bool new_data = false;
+        for (auto& [pv_name, channel] : channel_map_) {
+            if (channel->sync()) {
+                new_data = true;
+            }
+        }
+        return new_data;
+    }
+
+    template <typename T>
+    void bind(T& var, const std::string& pv_name) {
+        std::lock_guard lock(mutex_);
+        get_channel_unlocked(pv_name).bind(var);
+    }
+
+    ChannelBase& get_channel(const std::string& pv_name) {
+        std::lock_guard lock(mutex_);
+        return get_channel_unlocked(pv_name);
+    }
+
   private:
-    std::string provider_;
+    std::mutex mutex_;
+    std::unordered_map<std::string, std::unique_ptr<ChannelBase>> channel_map_;
+
+    ChannelBase& get_channel_unlocked(const std::string& pv_name) {
+        auto it = channel_map_.find(pv_name);
+        if (it == channel_map_.end()) {
+            throw std::runtime_error(pv_name + " not registered");
+        }
+        return *it->second;
+    }
 };
 
 } // namespace ezec
