@@ -3,50 +3,77 @@
 #include <string>
 #include <thread>
 #include <chrono>
+#include <vector>
 
 #include "ezec.hpp"
 
 volatile std::sig_atomic_t g_signal_caught = 0;
-void signal_handler(int signal) {
-    if (signal == SIGINT) {
-        std::cout << "\nKeyboard interrupt (Ctrl+C)" << std::endl;
-        g_signal_caught = 1;
-    }
-}
+void signal_handler(int) { g_signal_caught = 1; }
 
 int main(int argc, char* argv[]) {
+    if (argc < 2) {
+        std::cerr << "Usage: example <pv_name> [pv_name ...]\n";
+        return 1;
+    }
+
     std::signal(SIGINT, signal_handler);
 
-    // Get PV name from command line args
-    if (argc != 2) {
-        std::cout << "Usage: example <pv name>\n";
-        return EXIT_SUCCESS;
+    std::vector<std::string> pv_names;
+    for (int i = 1; i < argc; ++i) {
+        pv_names.emplace_back(argv[i]);
     }
-    const std::string pv_name = argv[1];
 
-    // Create Channel Access context
     ezec::Context ctxt;
-
     ezec::ChannelGroup group;
-    group.add(pv_name);
 
-    // User variables to store PV value from monitor
-    std::string val_string;
-    double val_double = 0.0;
+    struct PVData {
+        std::string name;
+        double val_double = 0.0;
+        int val_int = 0;
+        std::string val_string;
+    };
 
-    // Bind user variables to monitor
-    group.bind(val_string, pv_name);
-    group.bind(val_double, pv_name);
+    std::vector<PVData> pvs(pv_names.size());
+    for (size_t i = 0; i < pv_names.size(); ++i) {
+        pvs[i].name = pv_names[i];
+        group.add(pv_names[i]);
+        group.bind(pvs[i].val_double, pv_names[i]);
+        group.bind(pvs[i].val_int, pv_names[i]);
+        group.bind(pvs[i].val_string, pv_names[i]);
+    }
 
-    while (g_signal_caught == 0) {
-
-        // If there is new data, print it
-        if (group.sync()) {
-            std::cout << pv_name + "[string] = " << val_string << "\n";
-            std::cout << pv_name + "[double] = " << val_double << "\n\n";
+    std::cout << "Waiting for connections...\n";
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (!g_signal_caught && std::chrono::steady_clock::now() < deadline) {
+        bool all_connected = true;
+        for (auto& pv : pvs) {
+            if (!group.get_channel(pv.name).connected()) {
+                all_connected = false;
+                break;
+            }
         }
+        if (all_connected) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
+    for (auto& pv : pvs) {
+        bool conn = group.get_channel(pv.name).connected();
+        std::cout << pv.name << ": " << (conn ? "connected" : "NOT connected") << "\n";
+    }
+    std::cout << "\nMonitoring (Ctrl+C to quit)...\n\n";
+
+    while (!g_signal_caught) {
+        if (group.sync()) {
+            for (auto& pv : pvs) {
+                std::cout << pv.name << "  double=" << pv.val_double
+                          << "  int=" << pv.val_int
+                          << "  string=\"" << pv.val_string << "\"\n";
+            }
+            std::cout << "\n";
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    std::cout << "\nExiting.\n";
     return 0;
 }
