@@ -4,9 +4,9 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <variant>
 #include <vector>
-#include <unordered_map>
 
 #include "cadef.h"
 
@@ -103,9 +103,13 @@ class ChannelBase {
 class CAChannel : public ChannelBase {
   public:
     CAChannel(const std::string& pv_name) : ChannelBase(pv_name) {
-        SEVCHK(ca_create_channel(pv_name.c_str(), connection_callback, this,
-                                 CA_PRIORITY_DEFAULT, &channel_id_),
-               "ca_create_channel");
+        if (!ca_current_context()) {
+            should_destroy_context_ = true;
+            SEVCHK(ca_context_create(ca_enable_preemptive_callback), "ca_context_create");
+        }
+        SEVCHK(
+            ca_create_channel(pv_name.c_str(), connection_callback, this, CA_PRIORITY_DEFAULT, &channel_id_),
+            "ca_create_channel");
         SEVCHK(ca_flush_io(), "ca_flush_io");
     }
 
@@ -114,16 +118,53 @@ class CAChannel : public ChannelBase {
             ca_clear_subscription(evt_id_);
         }
         ca_clear_channel(channel_id_);
+        if (should_destroy_context_) {
+            ca_context_destroy();
+        }
     }
 
-    bool connected() const override {
-        return connected_.load(std::memory_order_relaxed);
+    bool connected() const override { return connected_.load(std::memory_order_relaxed); }
+
+    template <typename T>
+    void put(T value) {
+        if (connected()) {
+            auto dbr_type = ca_field_type(channel_id_);
+            assert_type_match<T>(dbr_type);
+            ca_put(ca_field_type(channel_id_), channel_id_, &value);
+            ca_pend_io(1.0);
+        }
     }
 
   private:
     chid channel_id_;
     evid evt_id_ = nullptr;
     std::atomic<bool> connected_{false};
+    bool should_destroy_context_ = false;
+
+    template <typename T>
+    void assert_type_match(chtype dbr_type) {
+        bool ok = false;
+        switch (dbr_type) {
+        case DBR_LONG:
+            ok = std::is_integral_v<T>;
+            break;
+        case DBR_SHORT:
+            ok = std::is_integral_v<T>;
+            break;
+        case DBR_FLOAT:
+            ok = std::is_floating_point_v<T>;
+            break;
+        case DBR_DOUBLE:
+            ok = std::is_floating_point_v<T>;
+            break;
+        case DBR_STRING:
+            ok = std::is_same_v<T, std::string> || std::is_same_v<T, char*> || std::is_same_v<T, const char*>;
+            break;
+        }
+        if (!ok) {
+            throw std::runtime_error("CA put type mismatch");
+        }
+    }
 
     void start_monitor() {
         if (evt_id_) {
@@ -141,8 +182,8 @@ class CAChannel : public ChannelBase {
             dbr = DBR_DOUBLE;
         }
 
-        SEVCHK(ca_create_subscription(dbr, 1, channel_id_, DBE_VALUE | DBE_ALARM,
-                                      subscription_callback, this, &evt_id_),
+        SEVCHK(ca_create_subscription(dbr, 1, channel_id_, DBE_VALUE | DBE_ALARM, subscription_callback, this,
+                                      &evt_id_),
                "ca_create_subscription");
         SEVCHK(ca_flush_io(), "ca_flush_io");
     }
@@ -177,17 +218,6 @@ class CAChannel : public ChannelBase {
         self->staged_value_ = value;
         self->new_data_.store(true, std::memory_order_release);
     }
-};
-
-class Context {
-  public:
-    Context() {
-        SEVCHK(ca_context_create(ca_enable_preemptive_callback), "ca_context_create");
-    }
-    ~Context() { ca_context_destroy(); }
-
-    Context(const Context&) = delete;
-    Context& operator=(const Context&) = delete;
 };
 
 class ChannelGroup {
