@@ -305,6 +305,14 @@ class CAChannel : public ChannelBase {
     }
 };
 
+/// \brief PVAccess implementation of ChannelBase.
+/// \warning This is not implemented yet
+class PVAChannel : public ChannelBase {
+  public:
+    PVAChannel(const std::string& pv_name) : ChannelBase(pv_name) {}
+    bool connected() const override { return false; }
+};
+
 /// \brief Manages a collection of PV channels with a single sync() call.
 ///
 /// ChannelGroup is the primary interface for monitoring multiple PVs. Register

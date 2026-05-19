@@ -57,3 +57,12 @@ target_compile_definitions(test_group PRIVATE
     TEST_DB_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 add_test(NAME test_group COMMAND test_group)
+
+add_executable(test_pva test_pva.cpp)
+target_link_libraries(test_pva PRIVATE ezec gtest_main)
+target_compile_definitions(test_pva PRIVATE
+    EPICS_BASE="${EPICS_BASE}"
+    EPICS_HOST_ARCH="${EPICS_HOST_ARCH}"
+    TEST_DB_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)
+add_test(NAME test_pva COMMAND test_pva)
