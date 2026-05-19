@@ -1,5 +1,8 @@
-record(ao, "EZECTEST:ao") {
+record(ao, "ezec:test:ao") {
     field(VAL, 3.14)
     field(PREC, 2)
-    field(PINI, "YES")
+}
+
+record(longout, "ezec:test:longout") {
+    field(VAL, 42)
 }
