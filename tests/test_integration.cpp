@@ -10,6 +10,8 @@
 
 #include "ezec.hpp"
 
+using namespace std::chrono_literals;
+
 class SoftIocFixture : public ::testing::Test {
   protected:
     pid_t ioc_pid_ = -1;
@@ -27,7 +29,7 @@ class SoftIocFixture : public ::testing::Test {
             _exit(1);
         }
 
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+        std::this_thread::sleep_for(2s);
     }
 
     void TearDown() override {
@@ -39,58 +41,55 @@ class SoftIocFixture : public ::testing::Test {
     }
 };
 
-void wait_for_connect(ezec::CAChannel& channel, int timout_sec = 5) {
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+/// Waits for channel to connect or times out
+void wait_connect(ezec::CAChannel& channel, int timeout_sec = 5) {
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
     while (!channel.connected() && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        std::this_thread::sleep_for(50ms);
     }
 }
+
+/// Waits for sync to return (true=new data available) or times out
+bool wait_sync(ezec::CAChannel& channel, int timeout_sec = 5) {
+    bool new_data = false;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
+    while (!new_data && std::chrono::steady_clock::now() < deadline) {
+        new_data = channel.sync();
+        if (!new_data) {
+            std::this_thread::sleep_for(50ms);
+        }
+    }
+    return new_data;
+}
+
 
 TEST_F(SoftIocFixture, AoBindSyncInitialValue) {
     ezec::CAChannel channel("EZECTEST:ao");
 
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (!channel.connected() && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    ASSERT_TRUE(channel.connected()) << "Channel did not connect within 5 seconds";
+    wait_connect(channel);
+    ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
 
     double value = 0.0;
     channel.bind(value);
 
-    bool synced = false;
-    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (!synced && std::chrono::steady_clock::now() < deadline) {
-        synced = channel.sync();
-        if (!synced)
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    ASSERT_TRUE(synced) << "No monitor update received within 5 seconds";
+    auto new_data = wait_sync(channel);
+    ASSERT_TRUE(new_data) << "No monitor update received within timeout";
     EXPECT_DOUBLE_EQ(value, 3.14);
 }
 
 TEST_F(SoftIocFixture, AoMultipleBind) {
     ezec::CAChannel channel("EZECTEST:ao");
 
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (!channel.connected() && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    ASSERT_TRUE(channel.connected()) << "Channel did not connect within 5 seconds";
+    wait_connect(channel);
+    ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
 
     double value1 = 0.0;
     double value2 = 0.0;
     channel.bind(value1);
     channel.bind(value2);
 
-    bool synced = false;
-    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (!synced && std::chrono::steady_clock::now() < deadline) {
-        synced = channel.sync();
-        if (!synced)
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    ASSERT_TRUE(synced) << "No monitor update received within 5 seconds";
+    auto new_data = wait_sync(channel);
+    ASSERT_TRUE(new_data) << "No monitor update received within timeout";
     EXPECT_DOUBLE_EQ(value1, 3.14);
     EXPECT_DOUBLE_EQ(value2, 3.14);
 }
@@ -98,22 +97,13 @@ TEST_F(SoftIocFixture, AoMultipleBind) {
 TEST_F(SoftIocFixture, AoBindToString) {
     ezec::CAChannel channel("EZECTEST:ao");
 
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (!channel.connected() && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    ASSERT_TRUE(channel.connected()) << "Channel did not connect within 5 seconds";
+    wait_connect(channel);
+    ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
 
     std::string value;
     channel.bind(value);
 
-    bool synced = false;
-    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (!synced && std::chrono::steady_clock::now() < deadline) {
-        synced = channel.sync();
-        if (!synced)
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    ASSERT_TRUE(synced) << "No monitor update received within 5 seconds";
+    auto new_data = wait_sync(channel);
+    ASSERT_TRUE(new_data) << "No monitor update received within timeout";
     EXPECT_STREQ(value.c_str(), "3.14");
 }
