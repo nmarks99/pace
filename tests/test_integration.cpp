@@ -73,8 +73,7 @@ bool wait_sync(ezec::CAChannel& channel, int timeout_sec = 5) {
     return new_data;
 }
 
-
-TEST_F(SoftIocFixture, AoBindSyncInitialValue) {
+TEST_F(SoftIocFixture, ao_BindDouble) {
     ezec::CAChannel channel("EZECTEST:ao");
 
     wait_connect(channel);
@@ -83,12 +82,18 @@ TEST_F(SoftIocFixture, AoBindSyncInitialValue) {
     double value = 0.0;
     channel.bind(value);
 
-    auto new_data = wait_sync(channel);
-    ASSERT_TRUE(new_data) << "No monitor update received within timeout";
+    ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
     EXPECT_DOUBLE_EQ(value, 3.14);
+
+    double new_value = 6.28;
+    ca_put(DBR_DOUBLE, channel.id(), &new_value);
+    ca_flush_io();
+
+    ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
+    EXPECT_DOUBLE_EQ(value, 6.28);
 }
 
-TEST_F(SoftIocFixture, AoMultipleBind) {
+TEST_F(SoftIocFixture, ao_BindMultipleDoubles) {
     ezec::CAChannel channel("EZECTEST:ao");
 
     wait_connect(channel);
@@ -103,9 +108,17 @@ TEST_F(SoftIocFixture, AoMultipleBind) {
     ASSERT_TRUE(new_data) << "No monitor update received within timeout";
     EXPECT_DOUBLE_EQ(value1, 3.14);
     EXPECT_DOUBLE_EQ(value2, 3.14);
+
+    double new_value = 6.28;
+    ca_put(DBR_DOUBLE, channel.id(), &new_value);
+    ca_flush_io();
+
+    ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
+    EXPECT_DOUBLE_EQ(value1, 6.28);
+    EXPECT_DOUBLE_EQ(value2, 6.28);
 }
 
-TEST_F(SoftIocFixture, AoBindToString) {
+TEST_F(SoftIocFixture, ao_BindString) {
     ezec::CAChannel channel("EZECTEST:ao");
 
     wait_connect(channel);
@@ -117,9 +130,37 @@ TEST_F(SoftIocFixture, AoBindToString) {
     auto new_data = wait_sync(channel);
     ASSERT_TRUE(new_data) << "No monitor update received within timeout";
     EXPECT_STREQ(value.c_str(), "3.14");
+
+    double new_value = 6.28;
+    ca_put(DBR_DOUBLE, channel.id(), &new_value);
+    ca_flush_io();
+
+    ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
+    EXPECT_STREQ(value.c_str(), "6.28");
 }
 
-TEST_F(SoftIocFixture, AoBindToMultipleTypes) {
+TEST_F(SoftIocFixture, ao_BindInt) {
+    ezec::CAChannel channel("EZECTEST:ao");
+
+    wait_connect(channel);
+    ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
+
+    int value = 0;
+    channel.bind(value);
+
+    auto new_data = wait_sync(channel);
+    ASSERT_TRUE(new_data) << "No monitor update received within timeout";
+    EXPECT_EQ(value, 3);
+
+    double new_value = 6.28;
+    ca_put(DBR_DOUBLE, channel.id(), &new_value);
+    ca_flush_io();
+
+    ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
+    EXPECT_EQ(value, 6);
+}
+
+TEST_F(SoftIocFixture, ao_BindMultipleTypes) {
     ezec::CAChannel channel("EZECTEST:ao");
 
     wait_connect(channel);
@@ -132,9 +173,17 @@ TEST_F(SoftIocFixture, AoBindToMultipleTypes) {
     channel.bind(value_double);
     channel.bind(value_int);
 
-    auto new_data = wait_sync(channel);
-    ASSERT_TRUE(new_data) << "No monitor update received within timeout";
+    ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
     EXPECT_STREQ(value_str.c_str(), "3.14");
     EXPECT_DOUBLE_EQ(value_double, 3.14);
     EXPECT_EQ(value_int, 3);
+
+    double new_value = 6.28;
+    ca_put(DBR_DOUBLE, channel.id(), &new_value);
+    ca_flush_io();
+
+    ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
+    EXPECT_STREQ(value_str.c_str(), "6.28");
+    EXPECT_DOUBLE_EQ(value_double, 6.28);
+    EXPECT_EQ(value_int, 6);
 }

@@ -1,14 +1,14 @@
 #pragma once
 #include <atomic>
+#include <iomanip>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <variant>
 #include <vector>
-#include <sstream>
-#include <iomanip>
 
 #include "cadef.h"
 
@@ -169,7 +169,6 @@ class ChannelBase {
     int precision_ = 4;
 };
 
-
 /// \brief Helper class for creation/destruction of EPICS (CA/PVA) context
 class Context {
   public:
@@ -200,14 +199,16 @@ class CAChannel : public ChannelBase {
 
     bool connected() const override { return connected_.load(std::memory_order_relaxed); }
 
+    chid id() const { return channel_id_; }
+
     // template <typename T>
     // void put(T value) {
-        // if (connected()) {
-            // auto dbr_type = ca_field_type(channel_id_);
-            // assert_type_match<T>(dbr_type);
-            // ca_put(ca_field_type(channel_id_), channel_id_, &value);
-            // ca_pend_io(1.0);
-        // }
+    // if (connected()) {
+    // auto dbr_type = ca_field_type(channel_id_);
+    // assert_type_match<T>(dbr_type);
+    // ca_put(ca_field_type(channel_id_), channel_id_, &value);
+    // ca_pend_io(1.0);
+    // }
     // }
 
   private:
@@ -217,27 +218,27 @@ class CAChannel : public ChannelBase {
 
     // template <typename T>
     // void assert_type_match(chtype dbr_type) {
-        // bool ok = false;
-        // switch (dbr_type) {
-        // case DBR_LONG:
-            // ok = std::is_integral_v<T>;
-            // break;
-        // case DBR_SHORT:
-            // ok = std::is_integral_v<T>;
-            // break;
-        // case DBR_FLOAT:
-            // ok = std::is_floating_point_v<T>;
-            // break;
-        // case DBR_DOUBLE:
-            // ok = std::is_floating_point_v<T>;
-            // break;
-        // case DBR_STRING:
-            // ok = std::is_same_v<T, std::string> || std::is_same_v<T, char*> || std::is_same_v<T, const char*>;
-            // break;
-        // }
-        // if (!ok) {
-            // throw std::runtime_error("CA put type mismatch");
-        // }
+    // bool ok = false;
+    // switch (dbr_type) {
+    // case DBR_LONG:
+    // ok = std::is_integral_v<T>;
+    // break;
+    // case DBR_SHORT:
+    // ok = std::is_integral_v<T>;
+    // break;
+    // case DBR_FLOAT:
+    // ok = std::is_floating_point_v<T>;
+    // break;
+    // case DBR_DOUBLE:
+    // ok = std::is_floating_point_v<T>;
+    // break;
+    // case DBR_STRING:
+    // ok = std::is_same_v<T, std::string> || std::is_same_v<T, char*> || std::is_same_v<T, const char*>;
+    // break;
+    // }
+    // if (!ok) {
+    // throw std::runtime_error("CA put type mismatch");
+    // }
     // }
 
     void start_monitor() {
