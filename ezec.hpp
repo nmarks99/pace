@@ -305,8 +305,41 @@ class CAChannel : public ChannelBase {
     }
 };
 
+/// \brief Manages a collection of PV channels with a single sync() call.
+///
+/// ChannelGroup is the primary interface for monitoring multiple PVs. Register
+/// PVs with add(), bind local variables with bind(), then call sync()
+/// periodically to update all bound variables at once.
+///
+/// Example usage:
+/// \code
+///     ezec::Context ctx;
+///     ezec::ChannelGroup group;
+///
+///     group.add("MyIOC:m1.RBV");
+///     group.add("MyIOC:m1.DMOV");
+///
+///     double position = 0.0;
+///     int done = 0;
+///     group.bind(position, "MyIOC:m1.RBV");
+///     group.bind(done, "MyIOC:m1.DMOV");
+///
+///     while (true) {
+///         if (group.sync()) {
+///             // At least one PV has new data
+///             printf("pos=%f done=%d\n", position, done);
+///         }
+///         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+///     }
+/// \endcode
 class ChannelGroup {
   public:
+    /// \brief Register a PV to be monitored.
+    ///
+    /// Creates a CAChannel and begins connecting. If the PV has already been
+    /// added, this is a no-op. Must be called before bind() for the same PV.
+    ///
+    /// \param pv_name The PV name (e.g. "MyIOC:name.VAL").
     void add(const std::string& pv_name) {
         std::lock_guard lock(mutex_);
         if (channel_map_.count(pv_name) == 0) {
@@ -314,6 +347,10 @@ class ChannelGroup {
         }
     }
 
+    /// \brief Sync all channels, updating every bound variable with new data.
+    ///
+    /// Returns true if at least one channel had new data since the last sync().
+    /// Call this periodically from your application loop.
     bool sync() {
         std::lock_guard lock(mutex_);
         bool new_data = false;
@@ -325,12 +362,28 @@ class ChannelGroup {
         return new_data;
     }
 
+    /// \brief Bind a local variable to a registered PV.
+    ///
+    /// The PV must have been added with add() first, otherwise this throws
+    /// std::runtime_error. The bound variable must outlive the ChannelGroup.
+    /// Multiple variables (including different types) can be bound to the
+    /// same PV.
+    ///
+    /// \param var  Reference to the local variable.
+    /// \param pv_name  The PV name, must match a previous add() call.
     template <typename T>
     void bind(T& var, const std::string& pv_name) {
         std::lock_guard lock(mutex_);
         get_channel_unlocked(pv_name).bind(var);
     }
 
+    /// \brief Get a reference to a registered channel.
+    ///
+    /// Throws std::runtime_error if the PV was not previously added.
+    /// The returned reference can be used to check connection status or
+    /// access the underlying channel directly.
+    ///
+    /// \param pv_name  The PV name, must match a previous add() call.
     ChannelBase& get_channel(const std::string& pv_name) {
         std::lock_guard lock(mutex_);
         return get_channel_unlocked(pv_name);
