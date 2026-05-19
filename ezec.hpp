@@ -178,6 +178,16 @@ class Context {
     Context& operator=(const Context&) = delete;
 };
 
+/// \brief Channel Access implementation of ChannelBase.
+///
+/// Connects to a single PV via the EPICS Channel Access protocol. A CA context
+/// (e.g. ezec::Context) must exist before construction. On connection, a
+/// monitor subscription is created automatically and the channel begins
+/// receiving value updates into the staged_value_. For floating-point PVs,
+/// the record's PREC field is fetched at connection time.
+///
+/// For write operations, use id() to obtain the raw CA channel identifier
+/// and call ca_put() directly.
 class CAChannel : public ChannelBase {
   public:
     CAChannel(const std::string& pv_name) : ChannelBase(pv_name) {
@@ -199,48 +209,19 @@ class CAChannel : public ChannelBase {
 
     bool connected() const override { return connected_.load(std::memory_order_relaxed); }
 
+    /// \brief Returns the underlying CA channel identifier for direct CA API use.
     chid id() const { return channel_id_; }
-
-    // template <typename T>
-    // void put(T value) {
-    // if (connected()) {
-    // auto dbr_type = ca_field_type(channel_id_);
-    // assert_type_match<T>(dbr_type);
-    // ca_put(ca_field_type(channel_id_), channel_id_, &value);
-    // ca_pend_io(1.0);
-    // }
-    // }
 
   private:
     chid channel_id_;
     evid evt_id_ = nullptr;
     std::atomic<bool> connected_{false};
 
-    // template <typename T>
-    // void assert_type_match(chtype dbr_type) {
-    // bool ok = false;
-    // switch (dbr_type) {
-    // case DBR_LONG:
-    // ok = std::is_integral_v<T>;
-    // break;
-    // case DBR_SHORT:
-    // ok = std::is_integral_v<T>;
-    // break;
-    // case DBR_FLOAT:
-    // ok = std::is_floating_point_v<T>;
-    // break;
-    // case DBR_DOUBLE:
-    // ok = std::is_floating_point_v<T>;
-    // break;
-    // case DBR_STRING:
-    // ok = std::is_same_v<T, std::string> || std::is_same_v<T, char*> || std::is_same_v<T, const char*>;
-    // break;
-    // }
-    // if (!ok) {
-    // throw std::runtime_error("CA put type mismatch");
-    // }
-    // }
-
+    /// \brief Creates a monitor subscription and fetches precision on connect.
+    ///
+    /// Called from the connection callback when the channel comes up. Clears
+    /// any existing subscription before creating a new one. For DBF_FLOAT and
+    /// DBF_DOUBLE PVs, also issues a one-time ca_get_callback to fetch PREC.
     void start_monitor() {
         if (evt_id_) {
             ca_clear_subscription(evt_id_);
@@ -259,6 +240,7 @@ class CAChannel : public ChannelBase {
         SEVCHK(ca_flush_io(), "ca_flush_io");
     }
 
+    /// \brief CA connection state callback. Starts the monitor on connect.
     static void connection_callback(struct connection_handler_args args) {
         auto* self = static_cast<CAChannel*>(ca_puser(args.chid));
         if (args.op == CA_OP_CONN_UP) {
@@ -269,6 +251,8 @@ class CAChannel : public ChannelBase {
         }
     }
 
+    /// \brief One-time ca_get_callback handler that extracts PREC from DBR_CTRL_DOUBLE.
+    /// Falls back to a default precision of 4 on failure.
     static void precision_callback(struct event_handler_args evt) {
         auto* self = static_cast<CAChannel*>(evt.usr);
         std::lock_guard lock(self->mutex_);
@@ -280,6 +264,8 @@ class CAChannel : public ChannelBase {
         }
     }
 
+    /// \brief CA subscription callback. Converts the incoming value to a
+    /// MonitorVariant and stages it for the next sync() call.
     static void subscription_callback(struct event_handler_args evt) {
         auto* self = static_cast<CAChannel*>(evt.usr);
         if (evt.status != ECA_NORMAL) {
