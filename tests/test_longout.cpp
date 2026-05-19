@@ -87,3 +87,26 @@ TEST_F(SoftIocFixture, longout_BindMultipleTypes) {
     EXPECT_DOUBLE_EQ(value_double, 99.0);
     EXPECT_EQ(value_str, "99");
 }
+
+
+TEST_F(SoftIocFixture, longout_FLNKBindString) {
+    ezec::CAChannel channel("ezec:test:longout.FLNK");
+
+    wait_connect(channel);
+    ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
+
+    std::string value;
+    channel.bind(value);
+
+    ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
+    EXPECT_STREQ(value.c_str(), "");
+
+    dbr_string_t new_value;
+    strncpy(new_value, "AnotherPV.PROC", sizeof(new_value) - 1);
+    new_value[sizeof(new_value) - 1] = '\0';
+    ca_put(DBR_STRING, channel.id(), &new_value);
+    ca_flush_io();
+
+    ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
+    EXPECT_STREQ(value.c_str(), "AnotherPV.PROC");
+}
