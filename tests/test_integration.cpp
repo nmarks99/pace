@@ -118,3 +118,23 @@ TEST_F(SoftIocFixture, AoBindToString) {
     ASSERT_TRUE(new_data) << "No monitor update received within timeout";
     EXPECT_STREQ(value.c_str(), "3.14");
 }
+
+TEST_F(SoftIocFixture, AoBindToMultipleTypes) {
+    ezec::CAChannel channel("EZECTEST:ao");
+
+    wait_connect(channel);
+    ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
+
+    std::string value_str;
+    double value_double;
+    int value_int;
+    channel.bind(value_str);
+    channel.bind(value_double);
+    channel.bind(value_int);
+
+    auto new_data = wait_sync(channel);
+    ASSERT_TRUE(new_data) << "No monitor update received within timeout";
+    EXPECT_STREQ(value_str.c_str(), "3.14");
+    EXPECT_DOUBLE_EQ(value_double, 3.14);
+    EXPECT_EQ(value_int, 3);
+}

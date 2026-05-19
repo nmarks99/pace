@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <variant>
 #include <vector>
+#include <sstream>
+#include <iomanip>
 
 #include "cadef.h"
 
@@ -26,7 +28,7 @@ using MonitorVariant = std::variant<std::monostate, double, int, std::string>;
 /// This function attempts to convert it to the type T of the user's bound
 /// variable. Returns std::nullopt if the conversion is not supported
 template <typename T>
-std::optional<T> convert(const MonitorVariant& v) {
+std::optional<T> convert(const MonitorVariant& v, int precision = 4) {
 
     // Target type T is the same as the variant's type
     if (auto* val = std::get_if<T>(&v)) {
@@ -48,7 +50,9 @@ std::optional<T> convert(const MonitorVariant& v) {
     // so we convert to string if we can.
     if constexpr (std::is_same_v<T, std::string>) {
         if (auto* d = std::get_if<double>(&v)) {
-            return std::to_string(*d);
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(precision) << *d;
+            return oss.str();
         }
         if (auto* i = std::get_if<int>(&v)) {
             return std::to_string(*i);
@@ -76,7 +80,7 @@ std::optional<T> convert(const MonitorVariant& v) {
 /// and writes the result to all of its target pointers.
 struct MonitorSlotBase {
     virtual ~MonitorSlotBase() = default;
-    virtual void copy_to_targets(const MonitorVariant& staged) = 0;
+    virtual void copy_to_targets(const MonitorVariant& staged, int precision = 4) = 0;
 };
 
 /// \brief Concrete slot that fans out a MonitorVariant to bound variables of type T.
@@ -88,8 +92,8 @@ struct MonitorSlotBase {
 template <typename T>
 struct MonitorSlot : MonitorSlotBase {
     std::vector<T*> targets;
-    void copy_to_targets(const MonitorVariant& staged) override {
-        if (auto val = convert<T>(staged)) {
+    void copy_to_targets(const MonitorVariant& staged, int precision = 4) override {
+        if (auto val = convert<T>(staged, precision)) {
             for (T* t : targets) {
                 *t = *val;
             }
@@ -150,7 +154,7 @@ class ChannelBase {
         }
         std::lock_guard lock(mutex_);
         for (auto& slot : slots_) {
-            slot->copy_to_targets(staged_value_);
+            slot->copy_to_targets(staged_value_, precision_);
         }
         new_data_.store(false, std::memory_order_relaxed);
         return true;
@@ -162,6 +166,7 @@ class ChannelBase {
     std::atomic<bool> new_data_{false};
     detail::MonitorVariant staged_value_;
     std::vector<std::unique_ptr<detail::MonitorSlotBase>> slots_;
+    int precision_ = 4;
 };
 
 
@@ -242,9 +247,14 @@ class CAChannel : public ChannelBase {
         }
 
         auto native = ca_field_type(channel_id_);
-        SEVCHK(ca_create_subscription(dbf_type_to_DBR(native), 1, channel_id_, DBE_VALUE | DBE_ALARM, subscription_callback, this,
-                                      &evt_id_),
+        SEVCHK(ca_create_subscription(dbf_type_to_DBR(native), 1, channel_id_, DBE_VALUE | DBE_ALARM,
+                                      subscription_callback, this, &evt_id_),
                "ca_create_subscription");
+
+        if (native == DBF_FLOAT || native == DBF_DOUBLE) {
+            ca_get_callback(DBR_CTRL_DOUBLE, channel_id_, precision_callback, this);
+        }
+
         SEVCHK(ca_flush_io(), "ca_flush_io");
     }
 
@@ -255,6 +265,17 @@ class CAChannel : public ChannelBase {
             self->start_monitor();
         } else {
             self->connected_.store(false, std::memory_order_relaxed);
+        }
+    }
+
+    static void precision_callback(struct event_handler_args evt) {
+        auto* self = static_cast<CAChannel*>(evt.usr);
+        std::lock_guard lock(self->mutex_);
+        if (evt.status == ECA_NORMAL) {
+            auto* ctrl = static_cast<const struct dbr_ctrl_double*>(evt.dbr);
+            self->precision_ = ctrl->precision;
+        } else {
+            self->precision_ = 4;
         }
     }
 
