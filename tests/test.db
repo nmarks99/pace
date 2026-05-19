@@ -10,3 +10,12 @@ record(longout, "ezec:test:longout") {
 record(stringout, "ezec:test:stringout") {
     field(VAL, "Hello World")
 }
+
+record(mbbo, "ezec:test:mbbo") {
+    field(ZRVL, 0)
+    field(ONVL, 1)
+    field(TWVL, 2)
+    field(ZRST, "Zero")
+    field(ONST, "One")
+    field(TWST, "Two")
+}

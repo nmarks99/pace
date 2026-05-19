@@ -1,7 +1,7 @@
 #include "test_helpers.hpp"
 
 TEST_F(SoftIocFixture, longout_BindInt) {
-    ezec::CAChannel channel("ezec:test:longout");
+    ezec::CAChannel channel("ezec:test:longout.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -21,7 +21,7 @@ TEST_F(SoftIocFixture, longout_BindInt) {
 }
 
 TEST_F(SoftIocFixture, longout_BindDouble) {
-    ezec::CAChannel channel("ezec:test:longout");
+    ezec::CAChannel channel("ezec:test:longout.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -41,7 +41,7 @@ TEST_F(SoftIocFixture, longout_BindDouble) {
 }
 
 TEST_F(SoftIocFixture, longout_BindString) {
-    ezec::CAChannel channel("ezec:test:longout");
+    ezec::CAChannel channel("ezec:test:longout.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -61,7 +61,7 @@ TEST_F(SoftIocFixture, longout_BindString) {
 }
 
 TEST_F(SoftIocFixture, longout_BindMultipleTypes) {
-    ezec::CAChannel channel("ezec:test:longout");
+    ezec::CAChannel channel("ezec:test:longout.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";

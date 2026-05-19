@@ -1,7 +1,7 @@
 #include "test_helpers.hpp"
 
 TEST_F(SoftIocFixture, ao_BindDouble) {
-    ezec::CAChannel channel("ezec:test:ao");
+    ezec::CAChannel channel("ezec:test:ao.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -21,7 +21,7 @@ TEST_F(SoftIocFixture, ao_BindDouble) {
 }
 
 TEST_F(SoftIocFixture, ao_BindMultipleDoubles) {
-    ezec::CAChannel channel("ezec:test:ao");
+    ezec::CAChannel channel("ezec:test:ao.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -46,7 +46,7 @@ TEST_F(SoftIocFixture, ao_BindMultipleDoubles) {
 }
 
 TEST_F(SoftIocFixture, ao_BindString) {
-    ezec::CAChannel channel("ezec:test:ao");
+    ezec::CAChannel channel("ezec:test:ao.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -67,7 +67,7 @@ TEST_F(SoftIocFixture, ao_BindString) {
 }
 
 TEST_F(SoftIocFixture, ao_BindInt) {
-    ezec::CAChannel channel("ezec:test:ao");
+    ezec::CAChannel channel("ezec:test:ao.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -88,7 +88,7 @@ TEST_F(SoftIocFixture, ao_BindInt) {
 }
 
 TEST_F(SoftIocFixture, ao_BindMultipleTypes) {
-    ezec::CAChannel channel("ezec:test:ao");
+    ezec::CAChannel channel("ezec:test:ao.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";

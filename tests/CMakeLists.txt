@@ -39,3 +39,12 @@ target_compile_definitions(test_stringout PRIVATE
     TEST_DB_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 add_test(NAME test_stringout COMMAND test_stringout)
+
+add_executable(test_mbbo test_mbbo.cpp)
+target_link_libraries(test_mbbo PRIVATE ezec gtest_main)
+target_compile_definitions(test_mbbo PRIVATE
+    EPICS_BASE="${EPICS_BASE}"
+    EPICS_HOST_ARCH="${EPICS_HOST_ARCH}"
+    TEST_DB_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)
+add_test(NAME test_mbbo COMMAND test_mbbo)
