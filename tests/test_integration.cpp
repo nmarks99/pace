@@ -7,14 +7,18 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include "ezec.hpp"
 
 using namespace std::chrono_literals;
 
+// Handles setup and teardown of a softIoc for testing
+// softIoc shell output is redirected to null
 class SoftIocFixture : public ::testing::Test {
   protected:
     pid_t ioc_pid_ = -1;
+    std::unique_ptr<ezec::Context> ctx_;
 
     void SetUp() override {
         std::string softIoc = std::string(EPICS_BASE) + "/bin/" + EPICS_HOST_ARCH + "/softIoc";
@@ -25,14 +29,21 @@ class SoftIocFixture : public ::testing::Test {
 
         if (ioc_pid_ == 0) {
             close(STDIN_FILENO);
+            int devnull = open("/dev/null", O_WRONLY);
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
+            close(devnull);
             execlp(softIoc.c_str(), "softIoc", "-d", db.c_str(), nullptr);
             _exit(1);
         }
 
         std::this_thread::sleep_for(2s);
+
+        ctx_ = std::make_unique<ezec::Context>();
     }
 
     void TearDown() override {
+        ctx_.reset();
         if (ioc_pid_ > 0) {
             kill(ioc_pid_, SIGTERM);
             int status;

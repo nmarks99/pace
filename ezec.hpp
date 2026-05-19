@@ -14,13 +14,27 @@ namespace ezec {
 
 namespace detail {
 
+/// \brief std::variant type that holds the latest value from an EPICS subscription.
+///
+/// PVs that cannot be represented as one of the types in this variant are
+/// unsupported.
 using MonitorVariant = std::variant<std::monostate, double, int, std::string>;
 
+/// \brief Convert a MonitorVariant to a target type T.
+///
+/// The MonitorVariant holds the latest value from a CA subscription callback
+/// This function attempts to convert it to the type T of the user's bound
+/// variable. Returns std::nullopt if the conversion is not supported
 template <typename T>
 std::optional<T> convert(const MonitorVariant& v) {
+
+    // Target type T is the same as the variant's type
     if (auto* val = std::get_if<T>(&v)) {
         return *val;
     }
+
+    // Target type T and variant are different, but
+    // both arithmetic types, so we cast.
     if constexpr (std::is_arithmetic_v<T>) {
         if (auto* d = std::get_if<double>(&v)) {
             return static_cast<T>(*d);
@@ -29,6 +43,9 @@ std::optional<T> convert(const MonitorVariant& v) {
             return static_cast<T>(*i);
         }
     }
+
+    // Target type T is string, and variant type is not
+    // so we convert to string if we can.
     if constexpr (std::is_same_v<T, std::string>) {
         if (auto* d = std::get_if<double>(&v)) {
             return std::to_string(*d);
@@ -37,14 +54,37 @@ std::optional<T> convert(const MonitorVariant& v) {
             return std::to_string(*i);
         }
     }
+
     return std::nullopt;
 }
 
+/// \brief Type-erased base class for monitor fan-out slots.
+///
+/// ChannelBase stores a vector of MonitorSlotBase pointers to fan out a single
+/// staged MonitorVariant to bound variables of potentially different types.
+/// Each concrete MonitorSlot<T> handles conversion and distribution for one
+/// target type. This provides type erasure so that ChannelBase doesn't need to
+/// know the types of the user's bound variables.
+///
+/// Slots are created on demand by bind<T>():
+/// - If a MonitorSlot<T> already exists, the new variable pointer is appended
+///   to its targets vector.
+/// - Otherwise, a new MonitorSlot<T> is created.
+///
+/// When sync() runs, it iterates all slots and calls copy_to_targets() on each.
+/// Each slot independently converts the variant to its type T via convert<T>()
+/// and writes the result to all of its target pointers.
 struct MonitorSlotBase {
     virtual ~MonitorSlotBase() = default;
     virtual void copy_to_targets(const MonitorVariant& staged) = 0;
 };
 
+/// \brief Concrete slot that fans out a MonitorVariant to bound variables of type T.
+///
+/// Holds raw pointers to the user's bound variables. When copy_to_targets() is
+/// called, it converts the staged value via convert<T>() and writes to every
+/// target. If conversion fails (e.g. string variant to double target), the
+/// targets are left unchanged.
 template <typename T>
 struct MonitorSlot : MonitorSlotBase {
     std::vector<T*> targets;
@@ -59,27 +99,51 @@ struct MonitorSlot : MonitorSlotBase {
 
 } // namespace detail
 
+/// \brief Abstract base class for a channel bound to a single PV.
+///
+/// Provides the bind/sync mechanism that decouples the network callback thread
+/// from the user's polling thread. Subclasses (e.g. CAChannel) are responsible
+/// for connecting to the PV and writing into staged_value_ when new data
+/// arrives. The user calls sync() to copy the staged value to all bound
+/// variables.
 class ChannelBase {
   public:
     ChannelBase(const std::string& pv_name) : pv_name_(pv_name) {}
     virtual ~ChannelBase() = default;
 
+    /// \brief Returns true if the channel is currently connected to the PV.
     virtual bool connected() const = 0;
 
+    /// \brief Bind a user variable to receive monitor updates from this channel.
+    ///
+    /// The variable will be updated with the latest PV value each time sync() is
+    /// called. Multiple variables can be bound to the same channel, including
+    /// variables of different types. The bound variable must outlive the channel.
+    ///
+    /// \param var Reference to the user's variable. A raw pointer to this
+    ///            variable is stored internally.
     template <typename T>
     void bind(T& var) {
         std::lock_guard lock(mutex_);
+        // If a MonitorSlot for this T already exists,
+        // store this pointer in its target vector
         for (auto& slot : slots_) {
             if (auto* typed = dynamic_cast<detail::MonitorSlot<T>*>(slot.get())) {
                 typed->targets.push_back(&var);
                 return;
             }
         }
+        // Create a new slot if no slot for T exists already
         auto slot = std::make_unique<detail::MonitorSlot<T>>();
         slot->targets.push_back(&var);
         slots_.push_back(std::move(slot));
     }
 
+    /// \brief Copy the latest staged value to all bound variables.
+    ///
+    /// Returns true if new data was available since the last call to sync().
+    /// This is the user's polling point. Call sync() periodically from your
+    /// application loop.
     bool sync() {
         if (!new_data_.load(std::memory_order_acquire)) {
             return false;
@@ -100,12 +164,21 @@ class ChannelBase {
     std::vector<std::unique_ptr<detail::MonitorSlotBase>> slots_;
 };
 
+
+/// \brief Helper class for creation/destruction of EPICS (CA/PVA) context
+class Context {
+  public:
+    Context() { SEVCHK(ca_context_create(ca_enable_preemptive_callback), "ca_context_create"); }
+    ~Context() { ca_context_destroy(); }
+    Context(const Context&) = delete;
+    Context& operator=(const Context&) = delete;
+};
+
 class CAChannel : public ChannelBase {
   public:
     CAChannel(const std::string& pv_name) : ChannelBase(pv_name) {
         if (!ca_current_context()) {
-            should_destroy_context_ = true;
-            SEVCHK(ca_context_create(ca_enable_preemptive_callback), "ca_context_create");
+            throw std::runtime_error("No CA context. Call ca_context_create() before creating a CAChannel.");
         }
         SEVCHK(
             ca_create_channel(pv_name.c_str(), connection_callback, this, CA_PRIORITY_DEFAULT, &channel_id_),
@@ -118,53 +191,49 @@ class CAChannel : public ChannelBase {
             ca_clear_subscription(evt_id_);
         }
         ca_clear_channel(channel_id_);
-        if (should_destroy_context_) {
-            ca_context_destroy();
-        }
     }
 
     bool connected() const override { return connected_.load(std::memory_order_relaxed); }
 
-    template <typename T>
-    void put(T value) {
-        if (connected()) {
-            auto dbr_type = ca_field_type(channel_id_);
-            assert_type_match<T>(dbr_type);
-            ca_put(ca_field_type(channel_id_), channel_id_, &value);
-            ca_pend_io(1.0);
-        }
-    }
+    // template <typename T>
+    // void put(T value) {
+        // if (connected()) {
+            // auto dbr_type = ca_field_type(channel_id_);
+            // assert_type_match<T>(dbr_type);
+            // ca_put(ca_field_type(channel_id_), channel_id_, &value);
+            // ca_pend_io(1.0);
+        // }
+    // }
 
   private:
     chid channel_id_;
     evid evt_id_ = nullptr;
     std::atomic<bool> connected_{false};
-    bool should_destroy_context_ = false;
 
-    template <typename T>
-    void assert_type_match(chtype dbr_type) {
-        bool ok = false;
-        switch (dbr_type) {
-        case DBR_LONG:
-            ok = std::is_integral_v<T>;
-            break;
-        case DBR_SHORT:
-            ok = std::is_integral_v<T>;
-            break;
-        case DBR_FLOAT:
-            ok = std::is_floating_point_v<T>;
-            break;
-        case DBR_DOUBLE:
-            ok = std::is_floating_point_v<T>;
-            break;
-        case DBR_STRING:
-            ok = std::is_same_v<T, std::string> || std::is_same_v<T, char*> || std::is_same_v<T, const char*>;
-            break;
-        }
-        if (!ok) {
-            throw std::runtime_error("CA put type mismatch");
-        }
-    }
+    // template <typename T>
+    // void assert_type_match(chtype dbr_type) {
+        // bool ok = false;
+        // switch (dbr_type) {
+        // case DBR_LONG:
+            // ok = std::is_integral_v<T>;
+            // break;
+        // case DBR_SHORT:
+            // ok = std::is_integral_v<T>;
+            // break;
+        // case DBR_FLOAT:
+            // ok = std::is_floating_point_v<T>;
+            // break;
+        // case DBR_DOUBLE:
+            // ok = std::is_floating_point_v<T>;
+            // break;
+        // case DBR_STRING:
+            // ok = std::is_same_v<T, std::string> || std::is_same_v<T, char*> || std::is_same_v<T, const char*>;
+            // break;
+        // }
+        // if (!ok) {
+            // throw std::runtime_error("CA put type mismatch");
+        // }
+    // }
 
     void start_monitor() {
         if (evt_id_) {
@@ -173,16 +242,7 @@ class CAChannel : public ChannelBase {
         }
 
         auto native = ca_field_type(channel_id_);
-        chtype dbr;
-        if (native == DBF_STRING) {
-            dbr = DBR_STRING;
-        } else if (native == DBF_ENUM) {
-            dbr = DBR_LONG;
-        } else {
-            dbr = DBR_DOUBLE;
-        }
-
-        SEVCHK(ca_create_subscription(dbr, 1, channel_id_, DBE_VALUE | DBE_ALARM, subscription_callback, this,
+        SEVCHK(ca_create_subscription(dbf_type_to_DBR(native), 1, channel_id_, DBE_VALUE | DBE_ALARM, subscription_callback, this,
                                       &evt_id_),
                "ca_create_subscription");
         SEVCHK(ca_flush_io(), "ca_flush_io");
@@ -205,13 +265,30 @@ class CAChannel : public ChannelBase {
         }
 
         detail::MonitorVariant value;
-        short dbr = evt.type;
-        if (dbr == DBR_DOUBLE) {
+        switch (evt.type) {
+        case DBR_DOUBLE:
             value = *static_cast<const dbr_double_t*>(evt.dbr);
-        } else if (dbr == DBR_LONG) {
+            break;
+        case DBR_FLOAT:
+            value = static_cast<double>(*static_cast<const dbr_float_t*>(evt.dbr));
+            break;
+        case DBR_LONG:
             value = static_cast<int>(*static_cast<const dbr_long_t*>(evt.dbr));
-        } else if (dbr == DBR_STRING) {
+            break;
+        case DBR_SHORT:
+            value = static_cast<int>(*static_cast<const dbr_short_t*>(evt.dbr));
+            break;
+        case DBR_CHAR:
+            value = static_cast<int>(*static_cast<const dbr_char_t*>(evt.dbr));
+            break;
+        case DBR_ENUM:
+            value = static_cast<int>(*static_cast<const dbr_enum_t*>(evt.dbr));
+            break;
+        case DBR_STRING:
             value = std::string(static_cast<const char*>(evt.dbr));
+            break;
+        default:
+            return;
         }
 
         std::lock_guard lock(self->mutex_);

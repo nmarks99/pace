@@ -31,6 +31,7 @@ int main(int argc, char* argv[]) {
         // return 1;
     // }
 
+    ezec::Context ctx;
     Motor motor("nick:m1");
 
     double rbv = 0.0;

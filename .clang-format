@@ -8,3 +8,5 @@ PointerAlignment: Left
 ReferenceAlignment: Left
 AlwaysBreakTemplateDeclarations: Yes
 ColumnLimit: 110
+InsertBraces: true
+AllowShortIfStatementsOnASingleLine: Never

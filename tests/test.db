@@ -1,4 +1,5 @@
 record(ao, "EZECTEST:ao") {
-    field(VAL, "3.14")
+    field(VAL, 3.14)
+    field(PREC, 2)
     field(PINI, "YES")
 }
