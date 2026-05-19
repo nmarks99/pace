@@ -6,3 +6,7 @@ record(ao, "ezec:test:ao") {
 record(longout, "ezec:test:longout") {
     field(VAL, 42)
 }
+
+record(stringout, "ezec:test:stringout") {
+    field(VAL, "Hello World")
+}

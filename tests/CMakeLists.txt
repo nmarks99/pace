@@ -30,3 +30,12 @@ target_compile_definitions(test_longout PRIVATE
     TEST_DB_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 add_test(NAME test_longout COMMAND test_longout)
+
+add_executable(test_stringout test_stringout.cpp)
+target_link_libraries(test_stringout PRIVATE ezec gtest_main)
+target_compile_definitions(test_stringout PRIVATE
+    EPICS_BASE="${EPICS_BASE}"
+    EPICS_HOST_ARCH="${EPICS_HOST_ARCH}"
+    TEST_DB_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)
+add_test(NAME test_stringout COMMAND test_stringout)
