@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <cstring>
 #include <iomanip>
 #include <memory>
 #include <mutex>
@@ -20,15 +21,15 @@ namespace detail {
 ///
 /// PVs that cannot be represented as one of the types in this variant are
 /// unsupported.
-using MonitorVariant = std::variant<std::monostate, double, int, std::string>;
+using ValueVariant = std::variant<std::monostate, double, int, std::string>;
 
-/// \brief Convert a MonitorVariant to a target type T.
+/// \brief Convert a ValueVariant to a target type T.
 ///
-/// The MonitorVariant holds the latest value from a CA subscription callback
+/// The ValueVariant holds the latest value from a CA subscription callback
 /// This function attempts to convert it to the type T of the user's bound
 /// variable. Returns std::nullopt if the conversion is not supported
 template <typename T>
-std::optional<T> convert(const MonitorVariant& v, int precision = 4) {
+std::optional<T> convert(const ValueVariant& v, int precision = 4) {
 
     // Target type T is the same as the variant's type
     if (auto* val = std::get_if<T>(&v)) {
@@ -65,7 +66,7 @@ std::optional<T> convert(const MonitorVariant& v, int precision = 4) {
 /// \brief Type-erased base class for monitor fan-out slots.
 ///
 /// ChannelBase stores a vector of MonitorSlotBase pointers to fan out a single
-/// staged MonitorVariant to bound variables of potentially different types.
+/// staged ValueVariant to bound variables of potentially different types.
 /// Each concrete MonitorSlot<T> handles conversion and distribution for one
 /// target type. This provides type erasure so that ChannelBase doesn't need to
 /// know the types of the user's bound variables.
@@ -80,10 +81,10 @@ std::optional<T> convert(const MonitorVariant& v, int precision = 4) {
 /// and writes the result to all of its target pointers.
 struct MonitorSlotBase {
     virtual ~MonitorSlotBase() = default;
-    virtual void copy_to_targets(const MonitorVariant& staged, int precision = 4) = 0;
+    virtual void copy_to_targets(const ValueVariant& staged, int precision = 4) = 0;
 };
 
-/// \brief Concrete slot that fans out a MonitorVariant to bound variables of type T.
+/// \brief Concrete slot that fans out a ValueVariant to bound variables of type T.
 ///
 /// Holds raw pointers to the user's bound variables. When copy_to_targets() is
 /// called, it converts the staged value via convert<T>() and writes to every
@@ -92,7 +93,7 @@ struct MonitorSlotBase {
 template <typename T>
 struct MonitorSlot : MonitorSlotBase {
     std::vector<T*> targets;
-    void copy_to_targets(const MonitorVariant& staged, int precision = 4) override {
+    void copy_to_targets(const ValueVariant& staged, int precision = 4) override {
         if (auto val = convert<T>(staged, precision)) {
             for (T* t : targets) {
                 *t = *val;
@@ -117,6 +118,22 @@ class ChannelBase {
 
     /// \brief Returns true if the channel is currently connected to the PV.
     virtual bool connected() const = 0;
+
+    /// \brief Writes a value to the PV.
+    ///
+    /// The type T must be convertible to one of the supported types.
+    ///
+    /// \param value The value to write.
+    /// \return true if the put was sent, false if the channel is disconnected
+    /// or the value is not convertible to a supported type.
+    template <typename T>
+    bool put(const T& value) {
+        return put(detail::ValueVariant(value));
+    }
+
+    /// \brief Write a string literal to the PV
+    /// \overload
+    bool put(const char* value) { return put(detail::ValueVariant(std::string(value))); }
 
     /// \brief Bind a user variable to receive monitor updates from this channel.
     ///
@@ -160,12 +177,17 @@ class ChannelBase {
         return true;
     }
 
+  private:
+    std::vector<std::unique_ptr<detail::MonitorSlotBase>> slots_;
+
+    /// \brief CA/PVA specific put implementation. Overridden by subclasses.
+    virtual bool put(const detail::ValueVariant& value) = 0;
+
   protected:
     std::string pv_name_;
     std::mutex mutex_;
     std::atomic<bool> new_data_{false};
-    detail::MonitorVariant staged_value_;
-    std::vector<std::unique_ptr<detail::MonitorSlotBase>> slots_;
+    detail::ValueVariant staged_value_;
     int precision_ = 4;
 };
 
@@ -186,8 +208,7 @@ class Context {
 /// receiving value updates into the staged_value_. For floating-point PVs,
 /// the record's PREC field is fetched at connection time.
 ///
-/// For write operations, use id() to obtain the raw CA channel identifier
-/// and call ca_put() directly.
+/// For write operations, use put(), or id() for direct CA API access.
 class CAChannel : public ChannelBase {
   public:
     CAChannel(const std::string& pv_name) : ChannelBase(pv_name) {
@@ -216,6 +237,29 @@ class CAChannel : public ChannelBase {
     chid channel_id_;
     evid evt_id_ = nullptr;
     std::atomic<bool> connected_{false};
+
+    /// \brief CA-specific put implementation. Sends the value via ca_put.
+    bool put(const detail::ValueVariant& value) override {
+        if (!connected()) {
+            return false;
+        }
+        if (auto* v = std::get_if<double>(&value)) {
+            dbr_double_t val = *v;
+            ca_put(DBR_DOUBLE, channel_id_, &val);
+        } else if (auto* v = std::get_if<int>(&value)) {
+            dbr_long_t val = *v;
+            ca_put(DBR_LONG, channel_id_, &val);
+        } else if (auto* s = std::get_if<std::string>(&value)) {
+            dbr_string_t v;
+            strncpy(v, s->c_str(), sizeof(v) - 1);
+            v[sizeof(v) - 1] = '\0';
+            ca_put(DBR_STRING, channel_id_, &v);
+        } else {
+            return false; // monostate
+        }
+        ca_flush_io();
+        return true;
+    }
 
     /// \brief Creates a monitor subscription and fetches precision on connect.
     ///
@@ -265,14 +309,14 @@ class CAChannel : public ChannelBase {
     }
 
     /// \brief CA subscription callback. Converts the incoming value to a
-    /// MonitorVariant and stages it for the next sync() call.
+    /// ValueVariant and stages it for the next sync() call.
     static void subscription_callback(struct event_handler_args evt) {
         auto* self = static_cast<CAChannel*>(evt.usr);
         if (evt.status != ECA_NORMAL) {
             return;
         }
 
-        detail::MonitorVariant value;
+        detail::ValueVariant value;
         switch (evt.type) {
         case DBR_DOUBLE:
             value = *static_cast<const dbr_double_t*>(evt.dbr);
@@ -311,6 +355,9 @@ class PVAChannel : public ChannelBase {
   public:
     PVAChannel(const std::string& pv_name) : ChannelBase(pv_name) {}
     bool connected() const override { return false; }
+
+  private:
+    bool put(const detail::ValueVariant& value) override { return false; }
 };
 
 /// \brief Manages a collection of PV channels with a single sync() call.
@@ -396,6 +443,10 @@ class ChannelGroup {
         std::lock_guard lock(mutex_);
         return get_channel_unlocked(pv_name);
     }
+
+    /// \brief Shorthand for get_channel().
+    /// \overload
+    ChannelBase& operator[](const std::string& pv_name) { return get_channel(pv_name); }
 
   private:
     std::mutex mutex_;

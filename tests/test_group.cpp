@@ -118,6 +118,30 @@ TEST_F(SoftIocFixture, group_GetChannelNotRegistered) {
     EXPECT_THROW(group.get_channel("nonexistent.VAL"), std::runtime_error);
 }
 
+TEST_F(SoftIocFixture, group_PutViaChannelBase) {
+    ezec::ChannelGroup group;
+    group.add("ezec:test:ao.VAL");
+
+    double val = 0.0;
+    group.bind(val, "ezec:test:ao.VAL");
+
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < deadline) {
+        group.sync();
+        if (val != 0.0) {
+            break;
+        }
+        std::this_thread::sleep_for(50ms);
+    }
+    ASSERT_DOUBLE_EQ(val, 3.14);
+
+    double new_val = 99.5;
+    group["ezec:test:ao.VAL"].put(new_val);
+
+    ASSERT_TRUE(wait_group_sync(group)) << "No monitor update after ca_put";
+    EXPECT_DOUBLE_EQ(val, 99.5);
+}
+
 TEST_F(SoftIocFixture, group_PutViaGetChannel) {
     ezec::ChannelGroup group;
     group.add("ezec:test:ao.VAL");
