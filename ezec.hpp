@@ -180,10 +180,10 @@ class ChannelBase {
   private:
     std::vector<std::unique_ptr<detail::MonitorSlotBase>> slots_;
 
+  protected:
     /// \brief CA/PVA specific put implementation. Overridden by subclasses.
     virtual bool put(const detail::ValueVariant& value) = 0;
 
-  protected:
     std::string pv_name_;
     std::mutex mutex_;
     std::atomic<bool> new_data_{false};
@@ -211,6 +211,8 @@ class Context {
 /// For write operations, use put(), or id() for direct CA API access.
 class CAChannel : public ChannelBase {
   public:
+    using ChannelBase::put;
+
     CAChannel(const std::string& pv_name) : ChannelBase(pv_name) {
         if (!ca_current_context()) {
             throw std::runtime_error("No CA context. Call ca_context_create() before creating a CAChannel.");
@@ -353,6 +355,8 @@ class CAChannel : public ChannelBase {
 /// \warning This is not implemented yet
 class PVAChannel : public ChannelBase {
   public:
+    using ChannelBase::put;
+
     PVAChannel(const std::string& pv_name) : ChannelBase(pv_name) {}
     bool connected() const override { return false; }
 

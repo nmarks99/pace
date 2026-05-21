@@ -32,9 +32,7 @@ TEST_F(SoftIocFixture, longout_BindDouble) {
     ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
     EXPECT_DOUBLE_EQ(value, 42.0);
 
-    dbr_long_t new_value = 99;
-    ca_put(DBR_LONG, channel.id(), &new_value);
-    ca_flush_io();
+    channel.put(99);
 
     ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
     EXPECT_DOUBLE_EQ(value, 99.0);
@@ -52,9 +50,7 @@ TEST_F(SoftIocFixture, longout_BindString) {
     ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
     EXPECT_EQ(value, "42");
 
-    dbr_long_t new_value = 99;
-    ca_put(DBR_LONG, channel.id(), &new_value);
-    ca_flush_io();
+    channel.put(99);
 
     ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
     EXPECT_EQ(value, "99");
@@ -78,9 +74,7 @@ TEST_F(SoftIocFixture, longout_BindMultipleTypes) {
     EXPECT_DOUBLE_EQ(value_double, 42.0);
     EXPECT_EQ(value_str, "42");
 
-    dbr_long_t new_value = 99;
-    ca_put(DBR_LONG, channel.id(), &new_value);
-    ca_flush_io();
+    channel.put(99);
 
     ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
     EXPECT_EQ(value_int, 99);

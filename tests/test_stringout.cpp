@@ -37,11 +37,7 @@ TEST_F(SoftIocFixture, stringout_BindMultipleStrings) {
     EXPECT_EQ(value1, "Hello World");
     EXPECT_EQ(value2, "Hello World");
 
-    dbr_string_t new_value;
-    strncpy(new_value, "Goodbye", sizeof(new_value) - 1);
-    new_value[sizeof(new_value) - 1] = '\0';
-    ca_put(DBR_STRING, channel.id(), &new_value);
-    ca_flush_io();
+    channel.put("Goodbye");
 
     ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
     EXPECT_EQ(value1, "Goodbye");
