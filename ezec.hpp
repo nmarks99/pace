@@ -399,26 +399,13 @@ class ChannelGroup {
     /// added, this is a no-op. Must be called before bind() for the same PV.
     ///
     /// \param pv_name The PV name (e.g. "MyIOC:name.VAL").
-    void add(const std::string& pv_name) {
+    /// \return A reference to the ChannelBase that was added
+    ChannelBase& add(const std::string& pv_name) {
         std::lock_guard lock(mutex_);
         if (channel_map_.count(pv_name) == 0) {
             channel_map_.emplace(pv_name, std::make_unique<CAChannel>(pv_name));
         }
-    }
-
-    /// \brief Sync all channels, updating every bound variable with new data.
-    ///
-    /// Returns true if at least one channel had new data since the last sync().
-    /// Call this periodically from your application loop.
-    bool sync() {
-        std::lock_guard lock(mutex_);
-        bool new_data = false;
-        for (auto& [pv_name, channel] : channel_map_) {
-            if (channel->sync()) {
-                new_data = true;
-            }
-        }
-        return new_data;
+        return this->get_channel_unlocked(pv_name);
     }
 
     /// \brief Bind a local variable to a registered PV.
@@ -434,6 +421,21 @@ class ChannelGroup {
     void bind(T& var, const std::string& pv_name) {
         std::lock_guard lock(mutex_);
         get_channel_unlocked(pv_name).bind(var);
+    }
+
+    /// \brief Sync all channels, updating every bound variable with new data.
+    ///
+    /// Returns true if at least one channel had new data since the last sync().
+    /// Call this periodically from your application loop.
+    bool sync() {
+        std::lock_guard lock(mutex_);
+        bool new_data = false;
+        for (auto& [pv_name, channel] : channel_map_) {
+            if (channel->sync()) {
+                new_data = true;
+            }
+        }
+        return new_data;
     }
 
     /// \brief Get a reference to a registered channel.
