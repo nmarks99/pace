@@ -19,3 +19,15 @@ record(mbbo, "ezec:test:mbbo") {
     field(ONST, "One")
     field(TWST, "Two")
 }
+
+record(waveform, "ezec:test:wfchar") {
+    field(FTVL, "CHAR")
+    field(INP, "{const: [1,2,3]}")
+    field(NELM, 3)
+}
+
+record(waveform, "ezec:test:wfdouble") {
+    field(FTVL, "DOUBLE")
+    field(INP, "{const: [1.11,2.22,3.33]}")
+    field(NELM, 3)
+}

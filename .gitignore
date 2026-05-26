@@ -4,3 +4,4 @@ build/
 *.local
 CMakeUserPresets.json
 compile_commands.json
+.iocsh_history

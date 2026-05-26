@@ -49,6 +49,15 @@ target_compile_definitions(test_mbbo PRIVATE
 )
 add_test(NAME test_mbbo COMMAND test_mbbo)
 
+add_executable(test_waveform test_waveform.cpp)
+target_link_libraries(test_waveform PRIVATE ezec gtest_main)
+target_compile_definitions(test_waveform PRIVATE
+    EPICS_BASE="${EPICS_BASE}"
+    EPICS_HOST_ARCH="${EPICS_HOST_ARCH}"
+    TEST_DB_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)
+add_test(NAME test_waveform COMMAND test_waveform)
+
 add_executable(test_group test_group.cpp)
 target_link_libraries(test_group PRIVATE ezec gtest_main)
 target_compile_definitions(test_group PRIVATE

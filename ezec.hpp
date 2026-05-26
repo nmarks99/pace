@@ -21,7 +21,8 @@ namespace detail {
 ///
 /// PVs that cannot be represented as one of the types in this variant are
 /// unsupported.
-using ValueVariant = std::variant<std::monostate, double, int, std::string>;
+using ValueVariant =
+    std::variant<std::monostate, double, int, std::string, std::vector<double>, std::vector<int>>;
 
 /// \brief Convert a ValueVariant to a target type T.
 ///
@@ -59,6 +60,8 @@ std::optional<T> convert(const ValueVariant& v, int precision = 4) {
             return std::to_string(*i);
         }
     }
+
+    // TODO: Handle conversion between std::vector<double> and std::vector<int>
 
     return std::nullopt;
 }
@@ -275,7 +278,7 @@ class CAChannel : public ChannelBase {
         }
 
         auto native = ca_field_type(channel_id_);
-        SEVCHK(ca_create_subscription(dbf_type_to_DBR(native), 1, channel_id_, DBE_VALUE | DBE_ALARM,
+        SEVCHK(ca_create_subscription(dbf_type_to_DBR(native), 0, channel_id_, DBE_VALUE | DBE_ALARM,
                                       subscription_callback, this, &evt_id_),
                "ca_create_subscription");
 
@@ -319,30 +322,56 @@ class CAChannel : public ChannelBase {
         }
 
         detail::ValueVariant value;
-        switch (evt.type) {
-        case DBR_DOUBLE:
-            value = *static_cast<const dbr_double_t*>(evt.dbr);
-            break;
-        case DBR_FLOAT:
-            value = static_cast<double>(*static_cast<const dbr_float_t*>(evt.dbr));
-            break;
-        case DBR_LONG:
-            value = static_cast<int>(*static_cast<const dbr_long_t*>(evt.dbr));
-            break;
-        case DBR_SHORT:
-            value = static_cast<int>(*static_cast<const dbr_short_t*>(evt.dbr));
-            break;
-        case DBR_CHAR:
-            value = static_cast<int>(*static_cast<const dbr_char_t*>(evt.dbr));
-            break;
-        case DBR_ENUM:
-            value = static_cast<int>(*static_cast<const dbr_enum_t*>(evt.dbr));
-            break;
-        case DBR_STRING:
-            value = std::string(static_cast<const char*>(evt.dbr));
-            break;
-        default:
-            return;
+        if (evt.count == 1) {
+            switch (evt.type) {
+            case DBR_DOUBLE:
+                value = *static_cast<const dbr_double_t*>(evt.dbr);
+                break;
+            case DBR_FLOAT:
+                value = static_cast<double>(*static_cast<const dbr_float_t*>(evt.dbr));
+                break;
+            case DBR_LONG:
+                value = static_cast<int>(*static_cast<const dbr_long_t*>(evt.dbr));
+                break;
+            case DBR_SHORT:
+                value = static_cast<int>(*static_cast<const dbr_short_t*>(evt.dbr));
+                break;
+            case DBR_CHAR:
+                value = static_cast<int>(*static_cast<const dbr_char_t*>(evt.dbr));
+                break;
+            case DBR_ENUM:
+                value = static_cast<int>(*static_cast<const dbr_enum_t*>(evt.dbr));
+                break;
+            case DBR_STRING:
+                value = std::string(static_cast<const char*>(evt.dbr));
+                break;
+            default:
+                return;
+            }
+        } else if (evt.count > 1) {
+            auto count = static_cast<size_t>(evt.count);
+            switch (evt.type) {
+            case DBR_CHAR: {
+                auto* arr = static_cast<const dbr_char_t*>(evt.dbr);
+                std::vector<int> vec(count);
+                for (size_t i = 0; i < count; ++i) {
+                    vec[i] = arr[i];
+                }
+                value = std::move(vec);
+                break;
+            }
+            case DBR_DOUBLE: {
+                auto* arr = static_cast<const dbr_double_t*>(evt.dbr);
+                std::vector<double> vec(count);
+                for (size_t i = 0; i < count; ++i) {
+                    vec[i] = arr[i];
+                }
+                value = std::move(vec);
+                break;
+            }
+            default:
+                return;
+            }
         }
 
         std::lock_guard lock(self->mutex_);
