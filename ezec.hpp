@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "cadef.h"
+#include <pvxs/client.h>
 
 namespace ezec {
 
@@ -194,7 +195,6 @@ class ChannelBase {
     int precision_ = 4;
 };
 
-
 /// \brief Channel Access implementation of ChannelBase.
 ///
 /// Connects to a single PV via the EPICS Channel Access protocol. A CA context
@@ -374,23 +374,84 @@ class CAChannel : public ChannelBase {
 };
 
 /// \brief PVAccess implementation of ChannelBase.
-/// \warning This is not implemented yet
+/// \warning TODO: document this.
 class PVAChannel : public ChannelBase {
   public:
     using ChannelBase::put;
 
-    PVAChannel(const std::string& pv_name) : ChannelBase(pv_name) {}
-    bool connected() const override { return false; }
+    PVAChannel(pvxs::client::Context& context, const std::string& pv_name) : ChannelBase(pv_name), ctx_(context) {
+        subscription_ = context.monitor(pv_name)
+                            .maskConnected(true)
+                            .maskDisconnected(true)
+                            .event([this](pvxs::client::Subscription& sub) {
+                                try {
+                                    while (auto update = sub.pop()) {
+                                        detail::ValueVariant value;
+                                        auto pva_value_field = update["value"];
+                                        switch (pva_value_field.type().code) {
+                                        case pvxs::TypeCode::Float64:
+                                            value = pva_value_field.as<double>();
+                                            break;
+                                        case pvxs::TypeCode::Float32:
+                                            value = static_cast<double>(pva_value_field.as<float>());
+                                            break;
+                                        case pvxs::TypeCode::Int32:
+                                            value = static_cast<int>(pva_value_field.as<int32_t>());
+                                            break;
+                                        case pvxs::TypeCode::Int16:
+                                            value = static_cast<int>(pva_value_field.as<int16_t>());
+                                            break;
+                                        case pvxs::TypeCode::UInt16:
+                                            value = static_cast<int>(pva_value_field.as<uint16_t>());
+                                            break;
+                                        case pvxs::TypeCode::Int8:
+                                            value = static_cast<int>(pva_value_field.as<int8_t>());
+                                            break;
+                                        case pvxs::TypeCode::UInt8:
+                                            value = static_cast<int>(pva_value_field.as<uint8_t>());
+                                            break;
+                                        case pvxs::TypeCode::String:
+                                            value = pva_value_field.as<std::string>();
+                                            break;
+                                        default:
+                                            continue;
+                                        }
+                                        std::lock_guard lock(mutex_);
+                                        staged_value_ = value;
+                                        new_data_.store(true, std::memory_order_release);
+                                    }
+                                } catch (pvxs::client::Connected&) {
+                                    connected_.store(true, std::memory_order_relaxed);
+                                } catch (pvxs::client::Disconnect&) {
+                                    connected_.store(false, std::memory_order_relaxed);
+                                }
+                            })
+                            .exec();
+    }
+
+    ~PVAChannel() {
+        if (subscription_) {
+            subscription_->cancel();
+        }
+    }
+
+    bool connected() const override { return connected_.load(std::memory_order_relaxed); }
 
   private:
+    std::shared_ptr<pvxs::client::Subscription> subscription_;
+    pvxs::client::Context& ctx_;
+    std::atomic<bool> connected_{false};
+
     bool put(const detail::ValueVariant& value) override { return false; }
 };
 
 /// \brief Manages a collection of PV channels with a single sync() call.
 ///
-/// Context is the primary interface for monitoring multiple PVs. Register
-/// PVs with add(), bind local variables with bind(), then call sync()
-/// periodically to update all bound variables at once.
+/// Context is the primary interface for monitoring multiple PVs under a
+/// single protocol (CA or PVA). For an application that supports both,
+/// create two Context's, one for each protocol. Register PVs with add(),
+/// bind local variables with bind(), then call sync() periodically to
+/// update all bound variables at once.
 ///
 /// Example usage:
 /// \code
@@ -418,18 +479,17 @@ class Context {
         if (protocol_ == "ca") {
             SEVCHK(ca_context_create(ca_enable_preemptive_callback), "ca_context_create");
         } else if (protocol_ == "pva") {
-            throw std::runtime_error("pvAccess not implemented yet");
+            pvxs_ctxt_ = pvxs::client::Context::fromEnv();
         } else {
-            throw std::runtime_error("Unknown protocol + " + protocol);
+            throw std::runtime_error("Unknown protocol " + protocol);
         }
     }
 
     ~Context() {
+        channel_map_.clear();
         if (protocol_ == "ca") {
-            channel_map_.clear();
             ca_context_destroy();
         } else if (protocol_ == "pva") {
-            // TODO:
         }
     }
 
@@ -439,7 +499,7 @@ class Context {
 
     /// \brief Register a PV to be monitored.
     ///
-    /// Creates a CAChannel and begins connecting. If the PV has already been
+    /// Creates a channel and begins connecting. If the PV has already been
     /// added, this is a no-op. Must be called before bind() for the same PV.
     ///
     /// \param pv_name The PV name (e.g. "MyIOC:name.VAL").
@@ -447,7 +507,11 @@ class Context {
     ChannelBase& add(const std::string& pv_name) {
         std::lock_guard lock(mutex_);
         if (channel_map_.count(pv_name) == 0) {
-            channel_map_.emplace(pv_name, std::make_unique<CAChannel>(pv_name));
+            if (protocol_ == "ca") {
+                channel_map_.emplace(pv_name, std::make_unique<CAChannel>(pv_name));
+            } else if (protocol_ == "pva") {
+                channel_map_.emplace(pv_name, std::make_unique<PVAChannel>(*pvxs_ctxt_, pv_name));
+            }
         }
         return this->get_channel_unlocked(pv_name);
     }
@@ -499,9 +563,10 @@ class Context {
     ChannelBase& operator[](const std::string& pv_name) { return get_channel(pv_name); }
 
   private:
-    std::string protocol_ = "ca";
+    const std::string protocol_ = "ca";
     std::mutex mutex_;
     std::unordered_map<std::string, std::unique_ptr<ChannelBase>> channel_map_;
+    std::optional<pvxs::client::Context> pvxs_ctxt_;
 
     ChannelBase& get_channel_unlocked(const std::string& pv_name) {
         auto it = channel_map_.find(pv_name);

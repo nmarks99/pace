@@ -45,11 +45,29 @@ foreach(DIR ${POTENTIAL_EPICS_INCLUDES})
 endforeach()
 # ------------------------------------------------------------------------------
 
+# --- PVXS --------------------------------------------------------------------
+if(NOT DEFINED PVXS OR PVXS STREQUAL "")
+    set(PVXS $ENV{PVXS})
+endif()
+if(NOT PVXS OR PVXS STREQUAL "")
+    message(FATAL_ERROR "PVXS not set. Pass -DPVXS=... or set the environment variable.")
+endif()
+set(PVXS "${PVXS}" CACHE STRING "Path to PVXS")
+
+set(PVXS_LIB_DIR "${PVXS}/lib/${EPICS_HOST_ARCH}")
+find_library(PVXS_pvxs pvxs
+    PATHS ${PVXS_LIB_DIR}
+    NO_DEFAULT_PATH
+    REQUIRED
+)
+set(PVXS_INCLUDES "${PVXS}/include")
+# ------------------------------------------------------------------------------
+
 # --- ezec header-only library -------------------------------------------------
 add_library(ezec INTERFACE)
 target_include_directories(ezec INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
-target_include_directories(ezec SYSTEM INTERFACE ${EPICS_BASE_INCLUDES})
-target_link_libraries(ezec INTERFACE ${EPICS_ca} ${EPICS_Com})
+target_include_directories(ezec SYSTEM INTERFACE ${EPICS_BASE_INCLUDES} ${PVXS_INCLUDES})
+target_link_libraries(ezec INTERFACE ${EPICS_ca} ${EPICS_Com} ${PVXS_pvxs})
 # ------------------------------------------------------------------------------
 
 # --- Tests --------------------------------------------------------------------
