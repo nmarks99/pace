@@ -18,7 +18,7 @@ using namespace std::chrono_literals;
 class SoftIocFixture : public ::testing::Test {
   protected:
     pid_t ioc_pid_ = -1;
-    std::unique_ptr<ezec::Context> ctx_;
+    // std::unique_ptr<ezec::Context> ctx_;
 
     void SetUp() override {
         std::string softIoc = std::string(EPICS_BASE) + "/bin/" + EPICS_HOST_ARCH + "/softIoc";
@@ -39,11 +39,11 @@ class SoftIocFixture : public ::testing::Test {
 
         std::this_thread::sleep_for(2s);
 
-        ctx_ = std::make_unique<ezec::Context>();
+        // ctx_ = std::make_unique<ezec::Context>();
     }
 
     void TearDown() override {
-        ctx_.reset();
+        // ctx_.reset();
         if (ioc_pid_ > 0) {
             kill(ioc_pid_, SIGTERM);
             int status;

@@ -1,7 +1,7 @@
 #include "test_helpers.hpp"
 
 /// Waits for group sync to return true or times out
-bool wait_group_sync(ezec::ChannelGroup& group, int timeout_sec = 5) {
+bool wait_group_sync(ezec::Context& group, int timeout_sec = 5) {
     bool new_data = false;
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
     while (!new_data && std::chrono::steady_clock::now() < deadline) {
@@ -14,7 +14,7 @@ bool wait_group_sync(ezec::ChannelGroup& group, int timeout_sec = 5) {
 }
 
 TEST_F(SoftIocFixture, group_BindAllRecords) {
-    ezec::ChannelGroup group;
+    ezec::Context group;
     group.add("ezec:test:ao.VAL");
     group.add("ezec:test:longout.VAL");
     group.add("ezec:test:stringout.VAL");
@@ -48,7 +48,7 @@ TEST_F(SoftIocFixture, group_BindAllRecords) {
 }
 
 TEST_F(SoftIocFixture, group_BindMultipleTypesToSameChannel) {
-    ezec::ChannelGroup group;
+    ezec::Context group;
     group.add("ezec:test:ao.VAL");
 
     double ao_double = 0.0;
@@ -74,14 +74,14 @@ TEST_F(SoftIocFixture, group_BindMultipleTypesToSameChannel) {
 }
 
 TEST_F(SoftIocFixture, group_BindBeforeAdd) {
-    ezec::ChannelGroup group;
+    ezec::Context group;
 
     double val = 0.0;
     EXPECT_THROW(group.bind(val, "ezec:test:ao.VAL"), std::runtime_error);
 }
 
 TEST_F(SoftIocFixture, group_DuplicateAddIsNoop) {
-    ezec::ChannelGroup group;
+    ezec::Context group;
     group.add("ezec:test:ao.VAL");
     group.add("ezec:test:ao.VAL");
 
@@ -101,7 +101,7 @@ TEST_F(SoftIocFixture, group_DuplicateAddIsNoop) {
 }
 
 TEST_F(SoftIocFixture, group_GetChannel) {
-    ezec::ChannelGroup group;
+    ezec::Context group;
     group.add("ezec:test:ao.VAL");
 
     auto& channel = group.get_channel("ezec:test:ao.VAL");
@@ -114,12 +114,12 @@ TEST_F(SoftIocFixture, group_GetChannel) {
 }
 
 TEST_F(SoftIocFixture, group_GetChannelNotRegistered) {
-    ezec::ChannelGroup group;
+    ezec::Context group;
     EXPECT_THROW(group.get_channel("nonexistent.VAL"), std::runtime_error);
 }
 
 TEST_F(SoftIocFixture, group_PutViaChannelBase) {
-    ezec::ChannelGroup group;
+    ezec::Context group;
     group.add("ezec:test:ao.VAL");
 
     double val = 0.0;
@@ -143,7 +143,7 @@ TEST_F(SoftIocFixture, group_PutViaChannelBase) {
 }
 
 TEST_F(SoftIocFixture, group_PutViaGetChannel) {
-    ezec::ChannelGroup group;
+    ezec::Context group;
     group.add("ezec:test:ao.VAL");
 
     double val = 0.0;

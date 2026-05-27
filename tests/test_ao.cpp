@@ -1,6 +1,7 @@
 #include "test_helpers.hpp"
 
 TEST_F(SoftIocFixture, ao_BindDouble) {
+    ezec::Context ctxt;
     ezec::CAChannel channel("ezec:test:ao.VAL");
 
     wait_connect(channel);
@@ -21,6 +22,7 @@ TEST_F(SoftIocFixture, ao_BindDouble) {
 }
 
 TEST_F(SoftIocFixture, ao_BindMultipleDoubles) {
+    ezec::Context ctxt;
     ezec::CAChannel channel("ezec:test:ao.VAL");
 
     wait_connect(channel);
@@ -44,6 +46,7 @@ TEST_F(SoftIocFixture, ao_BindMultipleDoubles) {
 }
 
 TEST_F(SoftIocFixture, ao_BindString) {
+    ezec::Context ctxt;
     ezec::CAChannel channel("ezec:test:ao.VAL");
 
     wait_connect(channel);
@@ -63,6 +66,7 @@ TEST_F(SoftIocFixture, ao_BindString) {
 }
 
 TEST_F(SoftIocFixture, ao_BindInt) {
+    ezec::Context ctxt;
     ezec::CAChannel channel("ezec:test:ao.VAL");
 
     wait_connect(channel);
@@ -82,6 +86,7 @@ TEST_F(SoftIocFixture, ao_BindInt) {
 }
 
 TEST_F(SoftIocFixture, ao_BindMultipleTypes) {
+    ezec::Context ctxt;
     ezec::CAChannel channel("ezec:test:ao.VAL");
 
     wait_connect(channel);

@@ -2,6 +2,7 @@
 #include "test_helpers.hpp"
 
 TEST_F(SoftIocFixture, wfchar_BindVectorInt) {
+    ezec::Context ctxt;
     ezec::CAChannel channel("ezec:test:wfchar.VAL");
 
     wait_connect(channel);
@@ -16,6 +17,7 @@ TEST_F(SoftIocFixture, wfchar_BindVectorInt) {
 }
 
 TEST_F(SoftIocFixture, wfdouble_BindVectorDouble) {
+    ezec::Context ctxt;
     ezec::CAChannel channel("ezec:test:wfdouble.VAL");
 
     wait_connect(channel);

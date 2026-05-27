@@ -43,7 +43,7 @@ TEST(Convert, DoubleToString) {
     ValueVariant v{3.14};
     auto result = convert<std::string>(v);
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(*result, std::to_string(3.14));
+    EXPECT_EQ(*result, "3.1400");
 }
 
 TEST(Convert, IntToString) {
