@@ -32,6 +32,13 @@ int main(int argc, char* argv[]) {
     std::string desc;
     ctxt.add("nmarks:m1.DESC").bind(desc);
 
+    auto d = ctxt["nmarks:m1.DESC"].peek<std::string>();
+    if (d) {
+        std::cout << *d << std::endl;
+    } else {
+        std::cout << "d is not readable as a std::string (yet)\n";
+    }
+
     while (!g_signal_caught) {
         if (ctxt.sync()) {
             std::cout << "VAL = " << rbv << std::endl;

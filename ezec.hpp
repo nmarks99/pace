@@ -27,7 +27,7 @@ using ValueVariant =
 
 /// \brief Convert a ValueVariant to a target type T.
 ///
-/// The ValueVariant holds the latest value from a CA subscription callback
+/// The ValueVariant holds the latest value from a subscription callback
 /// This function attempts to convert it to the type T of the user's bound
 /// variable. Returns std::nullopt if the conversion is not supported
 template <typename T>
@@ -179,6 +179,17 @@ class ChannelBase {
         }
         new_data_.store(false, std::memory_order_relaxed);
         return true;
+    }
+
+
+    /// \brief Returns the latest value from the monitor as the request type.
+    ///
+    /// Returns The latest value from the monitor as std::optional<T>.
+    /// If the conversion to T fails, the returned value is std::nullopt;
+    template <typename T>
+    std::optional<T> peek() {
+        std::lock_guard lock(mutex_);
+        return detail::convert<T>(staged_value_);
     }
 
   private:
