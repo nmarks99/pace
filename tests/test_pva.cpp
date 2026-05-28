@@ -2,6 +2,7 @@
 #include "ezec.hpp"
 
 TEST(PVA, unimplemented) {
-    ezec::PVAChannel chan("dummy");
+    auto ctxt = pvxs::client::Context::fromEnv();
+    ezec::PVAChannel chan(ctxt, "dummy");
     EXPECT_FALSE(chan.connected());
 }

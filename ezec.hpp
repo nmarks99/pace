@@ -181,7 +181,6 @@ class ChannelBase {
         return true;
     }
 
-
     /// \brief Returns the latest value from the monitor as the request type.
     ///
     /// Returns The latest value from the monitor as std::optional<T>.
@@ -317,6 +316,78 @@ class CAChannel : public ChannelBase {
         }
     }
 
+    static detail::ValueVariant get_scalar_event(struct event_handler_args evt) {
+        detail::ValueVariant value;
+        switch (evt.type) {
+        case DBR_DOUBLE:
+            value = *static_cast<const dbr_double_t*>(evt.dbr);
+            break;
+        case DBR_FLOAT:
+            value = static_cast<double>(*static_cast<const dbr_float_t*>(evt.dbr));
+            break;
+        case DBR_LONG:
+            value = static_cast<int>(*static_cast<const dbr_long_t*>(evt.dbr));
+            break;
+        case DBR_SHORT:
+            value = static_cast<int>(*static_cast<const dbr_short_t*>(evt.dbr));
+            break;
+        case DBR_CHAR:
+            value = static_cast<int>(*static_cast<const dbr_char_t*>(evt.dbr));
+            break;
+        case DBR_ENUM:
+            value = static_cast<int>(*static_cast<const dbr_enum_t*>(evt.dbr));
+            break;
+        case DBR_STRING:
+            value = std::string(static_cast<const char*>(evt.dbr));
+            break;
+        }
+        return value;
+    }
+
+    static detail::ValueVariant get_array_event(struct event_handler_args evt) {
+        detail::ValueVariant value;
+        auto count = static_cast<size_t>(evt.count);
+        switch (evt.type) {
+        case DBR_CHAR: {
+            auto* arr = static_cast<const dbr_char_t*>(evt.dbr);
+            std::vector<int> vec(arr, arr + count);
+            value = std::move(vec);
+            break;
+        }
+        case DBR_DOUBLE: {
+            auto* arr = static_cast<const dbr_double_t*>(evt.dbr);
+            std::vector<double> vec(arr, arr + count);
+            value = std::move(vec);
+            break;
+        }
+        case DBR_FLOAT: {
+            auto* arr = static_cast<const dbr_float_t*>(evt.dbr);
+            std::vector<double> vec(arr, arr + count);
+            value = std::move(vec);
+            break;
+        }
+        case DBR_LONG: {
+            auto* arr = static_cast<const dbr_long_t*>(evt.dbr);
+            std::vector<int> vec(arr, arr + count);
+            value = std::move(vec);
+            break;
+        }
+        case DBR_SHORT: {
+            auto* arr = static_cast<const dbr_short_t*>(evt.dbr);
+            std::vector<int> vec(arr, arr + count);
+            value = std::move(vec);
+            break;
+        }
+        case DBR_ENUM: {
+            break;
+        }
+        case DBR_STRING: {
+            break;
+        }
+        }
+        return value;
+    }
+
     /// \brief CA subscription callback. Converts the incoming value to a
     /// ValueVariant and stages it for the next sync() call.
     static void subscription_callback(struct event_handler_args evt) {
@@ -327,55 +398,13 @@ class CAChannel : public ChannelBase {
 
         detail::ValueVariant value;
         if (evt.count == 1) {
-            switch (evt.type) {
-            case DBR_DOUBLE:
-                value = *static_cast<const dbr_double_t*>(evt.dbr);
-                break;
-            case DBR_FLOAT:
-                value = static_cast<double>(*static_cast<const dbr_float_t*>(evt.dbr));
-                break;
-            case DBR_LONG:
-                value = static_cast<int>(*static_cast<const dbr_long_t*>(evt.dbr));
-                break;
-            case DBR_SHORT:
-                value = static_cast<int>(*static_cast<const dbr_short_t*>(evt.dbr));
-                break;
-            case DBR_CHAR:
-                value = static_cast<int>(*static_cast<const dbr_char_t*>(evt.dbr));
-                break;
-            case DBR_ENUM:
-                value = static_cast<int>(*static_cast<const dbr_enum_t*>(evt.dbr));
-                break;
-            case DBR_STRING:
-                value = std::string(static_cast<const char*>(evt.dbr));
-                break;
-            default:
-                return;
-            }
+            value = get_scalar_event(evt);
         } else if (evt.count > 1) {
-            auto count = static_cast<size_t>(evt.count);
-            switch (evt.type) {
-            case DBR_CHAR: {
-                auto* arr = static_cast<const dbr_char_t*>(evt.dbr);
-                std::vector<int> vec(count);
-                for (size_t i = 0; i < count; ++i) {
-                    vec[i] = arr[i];
-                }
-                value = std::move(vec);
-                break;
-            }
-            case DBR_DOUBLE: {
-                auto* arr = static_cast<const dbr_double_t*>(evt.dbr);
-                std::vector<double> vec(count);
-                for (size_t i = 0; i < count; ++i) {
-                    vec[i] = arr[i];
-                }
-                value = std::move(vec);
-                break;
-            }
-            default:
-                return;
-            }
+            value = get_array_event(evt);
+        }
+
+        if (std::holds_alternative<std::monostate>(value)) {
+            return;
         }
 
         std::lock_guard lock(self->mutex_);
@@ -390,7 +419,8 @@ class PVAChannel : public ChannelBase {
   public:
     using ChannelBase::put;
 
-    PVAChannel(pvxs::client::Context& context, const std::string& pv_name) : ChannelBase(pv_name), ctx_(context) {
+    PVAChannel(pvxs::client::Context& context, const std::string& pv_name)
+        : ChannelBase(pv_name), ctx_(context) {
         subscription_ = context.monitor(pv_name)
                             .maskConnected(true)
                             .maskDisconnected(true)
