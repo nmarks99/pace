@@ -111,3 +111,23 @@ TEST_F(SoftIocFixture, ao_BindMultipleTypes) {
     EXPECT_DOUBLE_EQ(value_double, 6.28);
     EXPECT_EQ(value_int, 6);
 }
+
+TEST_F(SoftIocFixture, ao_NoMonitorUntilBind) {
+    ezec::Context ctxt;
+    ezec::CAChannel channel("ezec:test:ao.VAL");
+
+    wait_connect(channel);
+    ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
+
+    // No bind() called yet -- monitor should not be running.
+    // Wait a bit to give any (incorrect) monitor time to fire.
+    std::this_thread::sleep_for(500ms);
+    EXPECT_FALSE(channel.sync()) << "sync() returned true before bind() was called";
+
+    // Now bind and verify data arrives
+    double value = 0.0;
+    channel.bind(value);
+
+    ASSERT_TRUE(wait_sync(channel)) << "No monitor update after bind()";
+    EXPECT_DOUBLE_EQ(value, 3.14);
+}

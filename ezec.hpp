@@ -162,6 +162,9 @@ class ChannelBase {
         auto slot = std::make_unique<detail::MonitorSlot<T>>();
         slot->targets.push_back(&var);
         slots_.push_back(std::move(slot));
+
+        // Inform the child class we need to create a subscription
+        enable_monitor();
     }
 
     /// \brief Copy the latest staged value to all bound variables.
@@ -195,8 +198,11 @@ class ChannelBase {
     std::vector<std::unique_ptr<detail::MonitorSlotBase>> slots_;
 
   protected:
-    /// \brief CA/PVA specific put implementation. Overridden by subclasses.
+    /// \brief CA/PVA specific put implementation.
     virtual bool put(const detail::ValueVariant& value) = 0;
+
+    /// \brief Informs the CA/PVAChannel to create a monitor.
+    virtual void enable_monitor() = 0;
 
     std::string pv_name_;
     std::mutex mutex_;
@@ -240,10 +246,20 @@ class CAChannel : public ChannelBase {
     /// \brief Returns the underlying CA channel identifier for direct CA API use.
     chid id() const { return channel_id_; }
 
+    void enable_monitor() override {
+        if (wants_monitor_.load(std::memory_order_relaxed)) {
+            // we have already created the monitor
+            return;
+        }
+        wants_monitor_.store(true, std::memory_order_relaxed);
+        start_monitor();
+    }
+
   private:
+    std::atomic<bool> connected_{false};
+    std::atomic<bool> wants_monitor_{false};
     chid channel_id_;
     evid evt_id_ = nullptr;
-    std::atomic<bool> connected_{false};
 
     /// \brief CA-specific put implementation. Sends the value via ca_put.
     bool put(const detail::ValueVariant& value) override {
@@ -275,21 +291,23 @@ class CAChannel : public ChannelBase {
     /// any existing subscription before creating a new one. For DBF_FLOAT and
     /// DBF_DOUBLE PVs, also issues a one-time ca_get_callback to fetch PREC.
     void start_monitor() {
-        if (evt_id_) {
-            ca_clear_subscription(evt_id_);
-            evt_id_ = nullptr;
+        if (wants_monitor_.load(std::memory_order_relaxed) && connected()) {
+            if (evt_id_) {
+                ca_clear_subscription(evt_id_);
+                evt_id_ = nullptr;
+            }
+
+            auto native = ca_field_type(channel_id_);
+            SEVCHK(ca_create_subscription(dbf_type_to_DBR(native), 0, channel_id_, DBE_VALUE | DBE_ALARM,
+                                          subscription_callback, this, &evt_id_),
+                   "ca_create_subscription");
+
+            if (native == DBF_FLOAT || native == DBF_DOUBLE) {
+                ca_get_callback(DBR_CTRL_DOUBLE, channel_id_, precision_callback, this);
+            }
+
+            SEVCHK(ca_flush_io(), "ca_flush_io");
         }
-
-        auto native = ca_field_type(channel_id_);
-        SEVCHK(ca_create_subscription(dbf_type_to_DBR(native), 0, channel_id_, DBE_VALUE | DBE_ALARM,
-                                      subscription_callback, this, &evt_id_),
-               "ca_create_subscription");
-
-        if (native == DBF_FLOAT || native == DBF_DOUBLE) {
-            ca_get_callback(DBR_CTRL_DOUBLE, channel_id_, precision_callback, this);
-        }
-
-        SEVCHK(ca_flush_io(), "ca_flush_io");
     }
 
     /// \brief CA connection state callback. Starts the monitor on connect.
@@ -420,8 +438,39 @@ class PVAChannel : public ChannelBase {
     using ChannelBase::put;
 
     PVAChannel(pvxs::client::Context& context, const std::string& pv_name)
-        : ChannelBase(pv_name), ctx_(context) {
-        subscription_ = context.monitor(pv_name)
+        : ChannelBase(pv_name), ctx_(context) {}
+
+    ~PVAChannel() {
+        if (subscription_) {
+            subscription_->cancel();
+        }
+    }
+
+    bool connected() const override { return connected_.load(std::memory_order_relaxed); }
+
+    void enable_monitor() override {
+        if (wants_monitor_.load(std::memory_order_relaxed)) {
+            return;
+        }
+        wants_monitor_.store(true, std::memory_order_relaxed);
+        start_monitor();
+    }
+
+  private:
+    std::atomic<bool> connected_{false};
+    std::atomic<bool> wants_monitor_{false};
+    std::shared_ptr<pvxs::client::Subscription> subscription_;
+    pvxs::client::Context& ctx_;
+
+    void start_monitor() {
+        if (!wants_monitor_.load(std::memory_order_relaxed)) {
+            return;
+        }
+        if (subscription_) {
+            return;
+        }
+
+        subscription_ = ctx_.monitor(pv_name_)
                             .maskConnected(true)
                             .maskDisconnected(true)
                             .event([this](pvxs::client::Subscription& sub) {
@@ -463,25 +512,14 @@ class PVAChannel : public ChannelBase {
                                     }
                                 } catch (pvxs::client::Connected&) {
                                     connected_.store(true, std::memory_order_relaxed);
+                                } catch (pvxs::client::Finished&) {
+                                    connected_.store(false, std::memory_order_relaxed);
                                 } catch (pvxs::client::Disconnect&) {
                                     connected_.store(false, std::memory_order_relaxed);
                                 }
                             })
                             .exec();
     }
-
-    ~PVAChannel() {
-        if (subscription_) {
-            subscription_->cancel();
-        }
-    }
-
-    bool connected() const override { return connected_.load(std::memory_order_relaxed); }
-
-  private:
-    std::shared_ptr<pvxs::client::Subscription> subscription_;
-    pvxs::client::Context& ctx_;
-    std::atomic<bool> connected_{false};
 
     bool put(const detail::ValueVariant& value) override { return false; }
 };
