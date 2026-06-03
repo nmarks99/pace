@@ -26,11 +26,11 @@ int main(int argc, char* argv[]) {
     ezec::Context ctxt(protocol);
 
     double rbv = 0.0;
-    ctxt.add("nmarks:m1.RBV").bind(rbv);
+    ctxt.bind(rbv, "nmarks:m1.RBV");
     double val = 0.0;
-    ctxt.add("nmarks:m1.VAL").bind(val);
+    ctxt.bind(val, "nmarks:m1.VAL");
     std::string desc;
-    ctxt.add("nmarks:m1.DESC").bind(desc);
+    ctxt.bind(desc, "nmarks:m1.DESC");
 
     auto d = ctxt["nmarks:m1.DESC"].peek<std::string>();
     if (d) {

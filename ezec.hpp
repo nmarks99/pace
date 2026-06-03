@@ -528,16 +528,13 @@ class PVAChannel : public ChannelBase {
 ///
 /// Context is the primary interface for monitoring multiple PVs under a
 /// single protocol (CA or PVA). For an application that supports both,
-/// create two Context's, one for each protocol. Register PVs with add(),
-/// bind local variables with bind(), then call sync() periodically to
-/// update all bound variables at once.
+/// create two Context's, one for each protocol. Bind local variables with
+/// bind(), then call sync() periodically to update all bound variables at
+/// once. Channels are created automatically on first use.
 ///
 /// Example usage:
 /// \code
 ///     ezec::Context ctxt;
-///
-///     ctxt.add("MyIOC:m1.RBV");
-///     ctxt.add("MyIOC:m1.DMOV");
 ///
 ///     double position = 0.0;
 ///     int done = 0;
@@ -576,34 +573,14 @@ class Context {
     // Context(const Context&) = delete;
     // Context& operator=(const Context&) = delete;
 
-    /// \brief Register a PV to be monitored.
+    /// \brief Bind a local variable to a PV.
     ///
-    /// Creates a channel and begins connecting. If the PV has already been
-    /// added, this is a no-op. Must be called before bind() for the same PV.
-    ///
-    /// \param pv_name The PV name (e.g. "MyIOC:name.VAL").
-    /// \return A reference to the ChannelBase that was added
-    ChannelBase& add(const std::string& pv_name) {
-        std::lock_guard lock(mutex_);
-        if (channel_map_.count(pv_name) == 0) {
-            if (protocol_ == "ca") {
-                channel_map_.emplace(pv_name, std::make_unique<CAChannel>(pv_name));
-            } else if (protocol_ == "pva") {
-                channel_map_.emplace(pv_name, std::make_unique<PVAChannel>(*pvxs_ctxt_, pv_name));
-            }
-        }
-        return this->get_channel_unlocked(pv_name);
-    }
-
-    /// \brief Bind a local variable to a registered PV.
-    ///
-    /// The PV must have been added with add() first, otherwise this throws
-    /// std::runtime_error. The bound variable must outlive the Context.
-    /// Multiple variables (including different types) can be bound to the
-    /// same PV.
+    /// If the PV has not been seen before, a channel is created automatically.
+    /// The bound variable must outlive the Context. Multiple variables
+    /// (including different types) can be bound to the same PV.
     ///
     /// \param var  Reference to the local variable.
-    /// \param pv_name  The PV name, must match a previous add() call.
+    /// \param pv_name  The PV name (e.g. "MyIOC:name.VAL").
     template <typename T>
     void bind(T& var, const std::string& pv_name) {
         std::lock_guard lock(mutex_);
@@ -625,13 +602,13 @@ class Context {
         return new_data;
     }
 
-    /// \brief Get a reference to a registered channel.
+    /// \brief Get a reference to a channel.
     ///
-    /// Throws std::runtime_error if the PV was not previously added.
+    /// If the PV has not been seen before, a channel is created automatically.
     /// The returned reference can be used to check connection status or
     /// access the underlying channel directly.
     ///
-    /// \param pv_name  The PV name, must match a previous add() call.
+    /// \param pv_name  The PV name (e.g. "MyIOC:name.VAL").
     ChannelBase& get_channel(const std::string& pv_name) {
         std::lock_guard lock(mutex_);
         return get_channel_unlocked(pv_name);
@@ -640,6 +617,17 @@ class Context {
     /// \brief Shorthand for get_channel().
     /// \overload
     ChannelBase& operator[](const std::string& pv_name) { return get_channel(pv_name); }
+
+    /// \brief Write a value to a PV.
+    ///
+    /// If the PV has not been seen before, a channel is created automatically.
+    ///
+    /// \param pv_name  The PV name (e.g. "MyIOC:name.VAL").
+    /// \param value    The value to write.
+    template<typename T>
+    void put(const std::string& pv_name, const T& value) {
+        get_channel(pv_name).put(value);
+    }
 
   private:
     const std::string protocol_ = "ca";
@@ -650,7 +638,12 @@ class Context {
     ChannelBase& get_channel_unlocked(const std::string& pv_name) {
         auto it = channel_map_.find(pv_name);
         if (it == channel_map_.end()) {
-            throw std::runtime_error(pv_name + " not registered");
+            // add the pv if if doens't exist yet
+            if (protocol_ == "ca") {
+                it = channel_map_.emplace(pv_name, std::make_unique<CAChannel>(pv_name)).first;
+            } else if (protocol_ == "pva") {
+                it = channel_map_.emplace(pv_name, std::make_unique<PVAChannel>(*pvxs_ctxt_, pv_name)).first;
+            }
         }
         return *it->second;
     }

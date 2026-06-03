@@ -14,10 +14,6 @@ bool wait_context_sync(ezec::Context& ctx, int timeout_sec = 5) {
 
 TEST_F(SoftIocFixture, context_BindAllRecords) {
     ezec::Context ctx;
-    ctx.add("ezec:test:ao.VAL");
-    ctx.add("ezec:test:longout.VAL");
-    ctx.add("ezec:test:stringout.VAL");
-    ctx.add("ezec:test:mbbo.VAL");
 
     double ao_val = 0.0;
     int longout_val = 0;
@@ -46,7 +42,6 @@ TEST_F(SoftIocFixture, context_BindAllRecords) {
 
 TEST_F(SoftIocFixture, context_BindMultipleTypesToSameChannel) {
     ezec::Context ctx;
-    ctx.add("ezec:test:ao.VAL");
 
     double ao_double = 0.0;
     int ao_int = 0;
@@ -70,36 +65,8 @@ TEST_F(SoftIocFixture, context_BindMultipleTypesToSameChannel) {
     EXPECT_EQ(ao_str, "3.14");
 }
 
-TEST_F(SoftIocFixture, context_BindBeforeAdd) {
-    ezec::Context ctx;
-
-    double val = 0.0;
-    EXPECT_THROW(ctx.bind(val, "ezec:test:ao.VAL"), std::runtime_error);
-}
-
-TEST_F(SoftIocFixture, context_DuplicateAddIsNoop) {
-    ezec::Context ctx;
-    ctx.add("ezec:test:ao.VAL");
-    ctx.add("ezec:test:ao.VAL");
-
-    double val = 0.0;
-    ctx.bind(val, "ezec:test:ao.VAL");
-
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (std::chrono::steady_clock::now() < deadline) {
-        ctx.sync();
-        if (val != 0.0) {
-            break;
-        }
-        std::this_thread::sleep_for(50ms);
-    }
-
-    EXPECT_DOUBLE_EQ(val, 3.14);
-}
-
 TEST_F(SoftIocFixture, context_GetChannel) {
     ezec::Context ctx;
-    ctx.add("ezec:test:ao.VAL");
 
     auto& channel = ctx.get_channel("ezec:test:ao.VAL");
 
@@ -110,14 +77,8 @@ TEST_F(SoftIocFixture, context_GetChannel) {
     EXPECT_TRUE(channel.connected());
 }
 
-TEST_F(SoftIocFixture, context_GetChannelNotRegistered) {
-    ezec::Context ctx;
-    EXPECT_THROW(ctx.get_channel("nonexistent.VAL"), std::runtime_error);
-}
-
 TEST_F(SoftIocFixture, context_NoMonitorUntilBind) {
     ezec::Context ctx;
-    ctx.add("ezec:test:ao.VAL");
 
     auto& channel = ctx.get_channel("ezec:test:ao.VAL");
 
@@ -139,7 +100,6 @@ TEST_F(SoftIocFixture, context_NoMonitorUntilBind) {
 
 TEST_F(SoftIocFixture, context_PutDouble) {
     ezec::Context ctx;
-    ctx.add("ezec:test:ao.VAL");
 
     double val = 0.0;
     ctx.bind(val, "ezec:test:ao.VAL");
@@ -155,7 +115,6 @@ TEST_F(SoftIocFixture, context_PutDouble) {
 
 TEST_F(SoftIocFixture, context_PutInt) {
     ezec::Context ctx;
-    ctx.add("ezec:test:longout.VAL");
 
     int val = 0;
     ctx.bind(val, "ezec:test:longout.VAL");
@@ -171,7 +130,6 @@ TEST_F(SoftIocFixture, context_PutInt) {
 
 TEST_F(SoftIocFixture, context_PutString) {
     ezec::Context ctx;
-    ctx.add("ezec:test:stringout.VAL");
 
     std::string val;
     ctx.bind(val, "ezec:test:stringout.VAL");
@@ -185,9 +143,23 @@ TEST_F(SoftIocFixture, context_PutString) {
     EXPECT_EQ(val, "Goodbye");
 }
 
+TEST_F(SoftIocFixture, context_PutViaContextMethod) {
+    ezec::Context ctx;
+
+    double val = 0.0;
+    ctx.bind(val, "ezec:test:ao.VAL");
+
+    ASSERT_TRUE(wait_context_sync(ctx)) << "No initial monitor update";
+    ASSERT_DOUBLE_EQ(val, 3.14);
+
+    ctx.put("ezec:test:ao.VAL", 99.5);
+
+    ASSERT_TRUE(wait_context_sync(ctx)) << "No monitor update after put";
+    EXPECT_DOUBLE_EQ(val, 99.5);
+}
+
 TEST_F(SoftIocFixture, context_PutViaRawCA) {
     ezec::Context ctx;
-    ctx.add("ezec:test:ao.VAL");
 
     double val = 0.0;
     ctx.bind(val, "ezec:test:ao.VAL");
