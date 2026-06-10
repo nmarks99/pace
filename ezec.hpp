@@ -551,21 +551,22 @@ class PVAChannel : public ChannelBase {
 /// \endcode
 class Context {
   public:
-    Context(const std::string& protocol = "ca") : protocol_(protocol) {
-        if (protocol_ == "ca") {
+    Context(const std::string& default_protocol = "ca") {
+        if (default_protocol == "ca") {
             SEVCHK(ca_context_create(ca_enable_preemptive_callback), "ca_context_create");
-        } else if (protocol_ == "pva") {
+            ca_initialized_ = true;
+        } else if (default_protocol == "pva") {
             pvxs_ctxt_ = pvxs::client::Context::fromEnv();
+            pva_initialized_ = true;
         } else {
-            throw std::runtime_error("Unknown protocol " + protocol);
+            throw std::runtime_error("Unknown protocol " + default_protocol);
         }
     }
 
     ~Context() {
         channel_map_.clear();
-        if (protocol_ == "ca") {
+        if (ca_current_context()) {
             ca_context_destroy();
-        } else if (protocol_ == "pva") {
         }
     }
 
@@ -591,9 +592,11 @@ class Context {
     /// \param var  Reference to the local variable.
     /// \param pv_name  The PV name (e.g. "MyIOC:name.VAL").
     template <typename T>
-    void bind(T& var, const std::string& pv_name) {
-        std::lock_guard lock(mutex_);
-        get_channel_unlocked(pv_name).bind(var);
+    void bind(T& var, const std::string& pv_name_full) {
+        auto [pv_name, _] = parse_protocol_pv_name(pv_name_full);
+        get_channel(pv_name).bind(var);
+        // std::lock_guard lock(mutex_);
+        // get_channel_unlocked(pv_name).bind(var);
     }
 
     /// \brief Sync all channels, updating every bound variable with new data.
@@ -613,14 +616,19 @@ class Context {
 
     /// \brief Get a reference to a channel.
     ///
-    /// If the PV has not been seen before, a channel is created automatically.
+    /// Throws if the PV has not been registered in the Context.
     /// The returned reference can be used to check connection status or
     /// access the underlying channel directly.
     ///
     /// \param pv_name  The PV name (e.g. "MyIOC:name.VAL").
-    ChannelBase& get_channel(const std::string& pv_name) {
+    ChannelBase& get_channel(const std::string& pv_name_full) {
         std::lock_guard lock(mutex_);
-        return get_channel_unlocked(pv_name);
+        auto [pv_name, _] = parse_protocol_pv_name(pv_name_full);
+        auto it = channel_map_.find(pv_name);
+        if (it == channel_map_.end()) {
+            throw std::runtime_error(pv_name + " not registered");
+        }
+        return *it->second;
     }
 
     /// \brief Shorthand for get_channel().
@@ -629,74 +637,85 @@ class Context {
 
     /// \brief Write a value to a PV.
     ///
-    /// If the PV has not been seen before, a channel is created automatically.
+    /// Throws if the PV has not been registered in the Context.
     ///
     /// \param pv_name  The PV name (e.g. "MyIOC:name.VAL").
     /// \param value    The value to write.
-    template<typename T>
+    template <typename T>
     void put(const std::string& pv_name, const T& value) {
         get_channel(pv_name).put(value);
     }
 
+    /// \brief Add a PV to the context
+    ///
+    /// \param pv_name The PV name, possibly with protocol.
     ChannelBase& add(const std::string& pv_name) {
-        auto it = channel_map_.find(pv_name);
-        if (it == channel_map_.end()) {
-            // add the pv if if doens't exist yet
-            if (protocol_ == "ca") {
-                it = channel_map_.emplace(pv_name, std::make_unique<CAChannel>(pv_name)).first;
-            } else if (protocol_ == "pva") {
-                it = channel_map_.emplace(pv_name, std::make_unique<PVAChannel>(*pvxs_ctxt_, pv_name)).first;
-            }
-        }
-        return *it->second;
+        auto [pv_name_strip, protocol] = parse_protocol_pv_name(pv_name);
+        return emplace_pv_in_channel_map(protocol, pv_name_strip);
     }
 
-    void add(const std::vector<std::string>& pv_names) {
+    /// \brief Add several PVs to the context
+    ///
+    /// \param pv_names List of PV names, possibly with protocol.
+    void add(std::initializer_list<std::string> pv_names) {
         for (const auto& pv_name : pv_names) {
-            auto it = channel_map_.find(pv_name);
-            if (it == channel_map_.end()) {
-                // add the pv if if doens't exist yet
-                if (protocol_ == "ca") {
-                    it = channel_map_.emplace(pv_name, std::make_unique<CAChannel>(pv_name)).first;
-                } else if (protocol_ == "pva") {
-                    it = channel_map_.emplace(pv_name, std::make_unique<PVAChannel>(*pvxs_ctxt_, pv_name)).first;
-                }
-            }
+            auto [pv_name_strip, protocol] = parse_protocol_pv_name(pv_name);
+            emplace_pv_in_channel_map(protocol, pv_name_strip);
         }
     }
 
-    void add(const std::string& prefix, const std::vector<std::string>& pv_names) {
-        for (std::string pv_name : pv_names) {
-            pv_name = prefix + pv_name;
-            auto it = channel_map_.find(pv_name);
-            if (it == channel_map_.end()) {
-                // add the pv if if doens't exist yet
-                if (protocol_ == "ca") {
-                    it = channel_map_.emplace(pv_name, std::make_unique<CAChannel>(pv_name)).first;
-                } else if (protocol_ == "pva") {
-                    it = channel_map_.emplace(pv_name, std::make_unique<PVAChannel>(*pvxs_ctxt_, pv_name)).first;
-                }
-            }
+    /// \brief Add several PVs to the context with a common prefix
+    ///
+    /// \param prefix Prefix to apply to PV names.
+    /// \param pv_names List of PV names, possibly with protocol.
+    void add(const std::string& prefix, std::initializer_list<std::string> pv_names) {
+        for (const std::string& pv_name : pv_names) {
+            auto [pv_name_strip, protocol] = parse_protocol_pv_name(pv_name);
+            emplace_pv_in_channel_map(protocol, prefix + pv_name_strip);
         }
     }
 
   private:
-    const std::string protocol_ = "ca";
     std::mutex mutex_;
     std::unordered_map<std::string, std::unique_ptr<ChannelBase>> channel_map_;
     std::optional<pvxs::client::Context> pvxs_ctxt_;
+    bool ca_initialized_ = false;
+    bool pva_initialized_ = false;
 
-    ChannelBase& get_channel_unlocked(const std::string& pv_name) {
+    ChannelBase& emplace_pv_in_channel_map(const std::string& protocol, const std::string& pv_name) {
         auto it = channel_map_.find(pv_name);
         if (it == channel_map_.end()) {
-            // add the pv if if doens't exist yet
-            if (protocol_ == "ca") {
+            if (protocol == "ca") {
+                if (!ca_initialized_) {
+                    SEVCHK(ca_context_create(ca_enable_preemptive_callback), "ca_context_create");
+                    ca_initialized_ = true;
+                }
                 it = channel_map_.emplace(pv_name, std::make_unique<CAChannel>(pv_name)).first;
-            } else if (protocol_ == "pva") {
+            } else if (protocol == "pva") {
+                if (!pva_initialized_) {
+                    pvxs_ctxt_ = pvxs::client::Context::fromEnv();
+                    pva_initialized_ = true;
+                }
                 it = channel_map_.emplace(pv_name, std::make_unique<PVAChannel>(*pvxs_ctxt_, pv_name)).first;
             }
         }
         return *it->second;
+    }
+
+    std::pair<std::string, std::string> parse_protocol_pv_name(const std::string& pv) {
+        auto id = pv.find("://");
+        if (id != std::string::npos) {
+            auto protocol = pv.substr(0, id);
+            auto pv_name = pv.substr(id + 3);
+            if (protocol == "ca") {
+                return {pv_name, "ca"};
+            } else if (protocol == "pva") {
+                return {pv_name, "pva"};
+            } else {
+                throw std::runtime_error("Unknown protocol " + protocol);
+            }
+        }
+        return {pv, "ca"};
     }
 };
 
