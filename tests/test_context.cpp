@@ -1,17 +1,5 @@
 #include "test_helpers.hpp"
 
-bool wait_context_sync(ezec::Context& ctx, int timeout_sec = 5) {
-    bool new_data = false;
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
-    while (!new_data && std::chrono::steady_clock::now() < deadline) {
-        new_data = ctx.sync();
-        if (!new_data) {
-            std::this_thread::sleep_for(50ms);
-        }
-    }
-    return new_data;
-}
-
 TEST_F(SoftIocFixture, context_BindAllRecords) {
     ezec::Context ctx;
     ctx.add("ezec:test:", {"ao.VAL", "longout.VAL", "stringout.VAL", "mbbo.VAL"});
@@ -230,4 +218,107 @@ TEST_F(SoftIocFixture, context_AddWithPrefixAndProtocol) {
 
     EXPECT_DOUBLE_EQ(ao_val, 3.14);
     EXPECT_EQ(longout_val, 42);
+}
+
+// --- Mixed protocol tests (require softIocPVA which serves both CA and PVA) ---
+
+TEST_F(SoftIocPVAFixture, context_MixedProtocol_BindDouble) {
+    ezec::Context ctx;
+    ctx.add("ca://ezec:test:ao.VAL");
+    ctx.add("pva://ezec:test:ao");
+
+    double ca_val = 0.0;
+    double pva_val = 0.0;
+    ctx.bind(ca_val, "ezec:test:ao.VAL");
+    ctx.bind(pva_val, "ezec:test:ao");
+
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline) {
+        ctx.sync();
+        if (ca_val != 0.0 && pva_val != 0.0) {
+            break;
+        }
+        std::this_thread::sleep_for(50ms);
+    }
+
+    EXPECT_DOUBLE_EQ(ca_val, 3.14);
+    EXPECT_DOUBLE_EQ(pva_val, 3.14);
+}
+
+TEST_F(SoftIocPVAFixture, context_MixedProtocol_BindAllTypes) {
+    ezec::Context ctx;
+    ctx.add("ca://ezec:test:ao.VAL");
+    ctx.add("ca://ezec:test:longout.VAL");
+    ctx.add("ca://ezec:test:stringout.VAL");
+    ctx.add("pva://ezec:test:ao");
+    ctx.add("pva://ezec:test:longout");
+    ctx.add("pva://ezec:test:stringout");
+
+    double ca_ao = 0.0;
+    int ca_longout = 0;
+    std::string ca_stringout;
+    double pva_ao = 0.0;
+    int pva_longout = 0;
+    std::string pva_stringout;
+
+    ctx.bind(ca_ao, "ezec:test:ao.VAL");
+    ctx.bind(ca_longout, "ezec:test:longout.VAL");
+    ctx.bind(ca_stringout, "ezec:test:stringout.VAL");
+    ctx.bind(pva_ao, "ezec:test:ao");
+    ctx.bind(pva_longout, "ezec:test:longout");
+    ctx.bind(pva_stringout, "ezec:test:stringout");
+
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline) {
+        ctx.sync();
+        if (ca_ao != 0.0 && ca_longout != 0 && !ca_stringout.empty() &&
+            pva_ao != 0.0 && pva_longout != 0 && !pva_stringout.empty()) {
+            break;
+        }
+        std::this_thread::sleep_for(50ms);
+    }
+
+    EXPECT_DOUBLE_EQ(ca_ao, 3.14);
+    EXPECT_EQ(ca_longout, 42);
+    EXPECT_EQ(ca_stringout, "Hello World");
+
+    EXPECT_DOUBLE_EQ(pva_ao, 3.14);
+    EXPECT_EQ(pva_longout, 42);
+    EXPECT_EQ(pva_stringout, "Hello World");
+}
+
+TEST_F(SoftIocPVAFixture, context_MixedProtocol_PutViaCAThenReadViaPVA) {
+    ezec::Context ctx;
+    ctx.add("ca://ezec:test:ao.VAL");
+    ctx.add("pva://ezec:test:ao");
+
+    double ca_val = 0.0;
+    double pva_val = 0.0;
+    ctx.bind(ca_val, "ezec:test:ao.VAL");
+    ctx.bind(pva_val, "ezec:test:ao");
+
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline) {
+        ctx.sync();
+        if (ca_val != 0.0 && pva_val != 0.0) {
+            break;
+        }
+        std::this_thread::sleep_for(50ms);
+    }
+    ASSERT_DOUBLE_EQ(ca_val, 3.14);
+    ASSERT_DOUBLE_EQ(pva_val, 3.14);
+
+    ctx["ezec:test:ao.VAL"].put(99.5);
+
+    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline) {
+        ctx.sync();
+        if (ca_val == 99.5 && pva_val == 99.5) {
+            break;
+        }
+        std::this_thread::sleep_for(50ms);
+    }
+
+    EXPECT_DOUBLE_EQ(ca_val, 99.5);
+    EXPECT_DOUBLE_EQ(pva_val, 99.5);
 }
