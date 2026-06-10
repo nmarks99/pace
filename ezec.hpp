@@ -85,7 +85,8 @@ std::optional<T> convert(const ValueVariant& v, int precision = 4) {
 /// and writes the result to all of its target pointers.
 struct MonitorSlotBase {
     virtual ~MonitorSlotBase() = default;
-    virtual void copy_to_targets(const ValueVariant& staged, int precision = 4) = 0;
+    virtual void copy_to_targets(const ValueVariant& staged, int precision,
+                                 pvxs::Value* pvxs_value = nullptr) = 0;
 };
 
 /// \brief Concrete slot that fans out a ValueVariant to bound variables of type T.
@@ -96,11 +97,35 @@ struct MonitorSlotBase {
 /// targets are left unchanged.
 template <typename T>
 struct MonitorSlot : MonitorSlotBase {
-    std::vector<T*> targets;
-    void copy_to_targets(const ValueVariant& staged, int precision = 4) override {
-        if (auto val = convert<T>(staged, precision)) {
-            for (T* t : targets) {
-                *t = *val;
+
+    struct Target {
+        T* pvalue;
+        std::string field_path;
+    };
+
+    std::vector<Target> targets;
+
+    void copy_to_targets(const ValueVariant& staged, int precision,
+                         pvxs::Value* pvxs_value = nullptr) override {
+        for (auto& target : targets) {
+            if (pvxs_value && std::holds_alternative<std::monostate>(staged)) {
+                pvxs::Value field = (*pvxs_value)[target.field_path];
+                try {
+                    if constexpr (std::is_same_v<T, std::vector<double>>) {
+                        auto arr = field.as<pvxs::shared_array<const double>>();
+                        *target.pvalue = std::vector<double>(arr.begin(), arr.end());
+                    } else if constexpr (std::is_same_v<T, std::vector<int>>) {
+                        auto arr = field.as<pvxs::shared_array<const int32_t>>();
+                        *target.pvalue = std::vector<int>(arr.begin(), arr.end());
+                    } else {
+                        *target.pvalue = field.as<T>();
+                    }
+                } catch (const std::exception& e) {
+                }
+            } else {
+                if (auto val = convert<T>(staged, precision)) {
+                    *target.pvalue = *val;
+                }
             }
         }
     }
@@ -148,19 +173,19 @@ class ChannelBase {
     /// \param var Reference to the user's variable. A raw pointer to this
     ///            variable is stored internally.
     template <typename T>
-    void bind(T& var) {
+    void bind(T& var, const std::string& field_path = "value") {
         std::lock_guard lock(mutex_);
         // If a MonitorSlot for this T already exists,
         // store this pointer in its target vector
         for (auto& slot : slots_) {
             if (auto* typed = dynamic_cast<detail::MonitorSlot<T>*>(slot.get())) {
-                typed->targets.push_back(&var);
+                typed->targets.push_back({&var, field_path});
                 return;
             }
         }
         // Create a new slot if no slot for T exists already
         auto slot = std::make_unique<detail::MonitorSlot<T>>();
-        slot->targets.push_back(&var);
+        slot->targets.push_back({&var, field_path});
         slots_.push_back(std::move(slot));
 
         // Inform the child class we need to create a subscription
@@ -178,7 +203,11 @@ class ChannelBase {
         }
         std::lock_guard lock(mutex_);
         for (auto& slot : slots_) {
-            slot->copy_to_targets(staged_value_, precision_);
+            if (pvxs_value_) {
+                slot->copy_to_targets(staged_value_, precision_, &pvxs_value_.value());
+            } else {
+                slot->copy_to_targets(staged_value_, precision_, nullptr);
+            }
         }
         new_data_.store(false, std::memory_order_relaxed);
         return true;
@@ -207,6 +236,7 @@ class ChannelBase {
     std::string pv_name_;
     std::mutex mutex_;
     std::atomic<bool> new_data_{false};
+    std::optional<pvxs::Value> pvxs_value_;
     detail::ValueVariant staged_value_;
     int precision_ = 4;
 };
@@ -476,38 +506,41 @@ class PVAChannel : public ChannelBase {
                             .event([this](pvxs::client::Subscription& sub) {
                                 try {
                                     while (auto update = sub.pop()) {
+                                        std::lock_guard lock(mutex_);
+                                        pvxs_value_ = update;
                                         detail::ValueVariant value;
                                         auto pva_value_field = update["value"];
-                                        switch (pva_value_field.type().code) {
-                                        case pvxs::TypeCode::Float64:
-                                            value = pva_value_field.as<double>();
-                                            break;
-                                        case pvxs::TypeCode::Float32:
-                                            value = static_cast<double>(pva_value_field.as<float>());
-                                            break;
-                                        case pvxs::TypeCode::Int32:
-                                            value = static_cast<int>(pva_value_field.as<int32_t>());
-                                            break;
-                                        case pvxs::TypeCode::Int16:
-                                            value = static_cast<int>(pva_value_field.as<int16_t>());
-                                            break;
-                                        case pvxs::TypeCode::UInt16:
-                                            value = static_cast<int>(pva_value_field.as<uint16_t>());
-                                            break;
-                                        case pvxs::TypeCode::Int8:
-                                            value = static_cast<int>(pva_value_field.as<int8_t>());
-                                            break;
-                                        case pvxs::TypeCode::UInt8:
-                                            value = static_cast<int>(pva_value_field.as<uint8_t>());
-                                            break;
-                                        case pvxs::TypeCode::String:
-                                            value = pva_value_field.as<std::string>();
-                                            break;
-                                        default:
-                                            continue;
+                                        if (pva_value_field) {
+                                            switch (pva_value_field.type().code) {
+                                            case pvxs::TypeCode::Float64:
+                                                value = pva_value_field.as<double>();
+                                                break;
+                                            case pvxs::TypeCode::Float32:
+                                                value = static_cast<double>(pva_value_field.as<float>());
+                                                break;
+                                            case pvxs::TypeCode::Int32:
+                                                value = static_cast<int>(pva_value_field.as<int32_t>());
+                                                break;
+                                            case pvxs::TypeCode::Int16:
+                                                value = static_cast<int>(pva_value_field.as<int16_t>());
+                                                break;
+                                            case pvxs::TypeCode::UInt16:
+                                                value = static_cast<int>(pva_value_field.as<uint16_t>());
+                                                break;
+                                            case pvxs::TypeCode::Int8:
+                                                value = static_cast<int>(pva_value_field.as<int8_t>());
+                                                break;
+                                            case pvxs::TypeCode::UInt8:
+                                                value = static_cast<int>(pva_value_field.as<uint8_t>());
+                                                break;
+                                            case pvxs::TypeCode::String:
+                                                value = pva_value_field.as<std::string>();
+                                                break;
+                                            default:
+                                                continue;
+                                            }
+                                            staged_value_ = value;
                                         }
-                                        std::lock_guard lock(mutex_);
-                                        staged_value_ = value;
                                         new_data_.store(true, std::memory_order_release);
                                     }
                                 } catch (pvxs::client::Connected&) {
@@ -551,11 +584,11 @@ class PVAChannel : public ChannelBase {
 /// \endcode
 class Context {
   public:
-    Context(const std::string& default_protocol = "ca") {
-        if (default_protocol == "ca") {
+    Context(const std::string& default_protocol = "ca") : default_protocol_(default_protocol) {
+        if (default_protocol_ == "ca") {
             SEVCHK(ca_context_create(ca_enable_preemptive_callback), "ca_context_create");
             ca_initialized_ = true;
-        } else if (default_protocol == "pva") {
+        } else if (default_protocol_ == "pva") {
             pvxs_ctxt_ = pvxs::client::Context::fromEnv();
             pva_initialized_ = true;
         } else {
@@ -592,11 +625,9 @@ class Context {
     /// \param var  Reference to the local variable.
     /// \param pv_name  The PV name (e.g. "MyIOC:name.VAL").
     template <typename T>
-    void bind(T& var, const std::string& pv_name_full) {
-        auto [pv_name, _] = parse_protocol_pv_name(pv_name_full);
-        get_channel(pv_name).bind(var);
-        // std::lock_guard lock(mutex_);
-        // get_channel_unlocked(pv_name).bind(var);
+    void bind(T& var, const std::string& pv_name, const std::string& field_path = "value") {
+        auto [pv_name_strip, _] = parse_protocol_pv_name(pv_name);
+        get_channel(pv_name_strip).bind(var, field_path);
     }
 
     /// \brief Sync all channels, updating every bound variable with new data.
@@ -621,12 +652,12 @@ class Context {
     /// access the underlying channel directly.
     ///
     /// \param pv_name  The PV name (e.g. "MyIOC:name.VAL").
-    ChannelBase& get_channel(const std::string& pv_name_full) {
+    ChannelBase& get_channel(const std::string& pv_name) {
         std::lock_guard lock(mutex_);
-        auto [pv_name, _] = parse_protocol_pv_name(pv_name_full);
-        auto it = channel_map_.find(pv_name);
+        auto [pv_name_strip, _] = parse_protocol_pv_name(pv_name);
+        auto it = channel_map_.find(pv_name_strip);
         if (it == channel_map_.end()) {
-            throw std::runtime_error(pv_name + " not registered");
+            throw std::runtime_error(pv_name_strip + " not registered");
         }
         return *it->second;
     }
@@ -677,10 +708,11 @@ class Context {
 
   private:
     std::mutex mutex_;
-    std::unordered_map<std::string, std::unique_ptr<ChannelBase>> channel_map_;
-    std::optional<pvxs::client::Context> pvxs_ctxt_;
+    const std::string default_protocol_ = "ca";
     bool ca_initialized_ = false;
     bool pva_initialized_ = false;
+    std::unordered_map<std::string, std::unique_ptr<ChannelBase>> channel_map_;
+    std::optional<pvxs::client::Context> pvxs_ctxt_;
 
     ChannelBase& emplace_pv_in_channel_map(const std::string& protocol, const std::string& pv_name) {
         auto it = channel_map_.find(pv_name);
@@ -715,7 +747,7 @@ class Context {
                 throw std::runtime_error("Unknown protocol " + protocol);
             }
         }
-        return {pv, "ca"};
+        return {pv, default_protocol_};
     }
 };
 

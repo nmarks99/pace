@@ -31,3 +31,31 @@ record(waveform, "ezec:test:wfdouble") {
     field(INP, "{const: [1.11,2.22,3.33]}")
     field(NELM, 3)
 }
+
+record(ao, "ezec:test:X") {
+    field(PREC, 3)
+    field(VAL, 1.11)
+    info(Q:group, {
+        "ezec:test:Position" : {
+            "X" : {+channel : "VAL"}
+        }
+    })
+}
+record(ao, "ezec:test:Y") {
+    field(PREC, 3)
+    field(VAL, 2.22)
+    info(Q:group, {
+        "ezec:test:Position" : {
+            "Y" : {+channel : "VAL"}
+        }
+    })
+}
+record(ao, "ezec:test:Z") {
+    field(PREC, 3)
+    field(VAL, 3.33)
+    info(Q:group, {
+        "ezec:test:Position" : {
+            "Z" : {+channel : "VAL"}
+        }
+    })
+}

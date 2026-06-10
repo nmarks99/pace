@@ -15,15 +15,21 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, signal_handler);
 
     // User specifies protocol "ca" or "pva" from command line
-    std::string protocol;
-    if (argc < 2) {
-        std::cout << "Usage: ./example <protocol>\n";
-        return EXIT_FAILURE;
-    }
-    protocol = std::string(argv[1]);
+    // std::string protocol;
+    // if (argc < 2) {
+        // std::cout << "Usage: ./example <protocol>\n";
+        // return EXIT_FAILURE;
+    // }
+    // protocol = std::string(argv[1]);
 
-    std::cout << "Using " << protocol << " protocol" << std::endl;
-    ezec::Context ctxt(protocol);
+    // std::cout << "Using " << protocol << " protocol" << std::endl;
+    ezec::Context ctxt("ca"); // default protocol = Channel Access
+    ctxt.add({
+        "nmarks:m1.DESC",
+        "ca://nmarks:m1.RBV",
+        "ca://nmarks:m1.VAL",
+        "pva://nmarks:m1.PREC",
+    });
 
     double rbv = 0.0;
     ctxt.bind(rbv, "nmarks:m1.RBV");
@@ -31,6 +37,8 @@ int main(int argc, char* argv[]) {
     ctxt.bind(val, "nmarks:m1.VAL");
     std::string desc;
     ctxt.bind(desc, "nmarks:m1.DESC");
+    double posx;
+    ctxt.bind(posx, "pva://nmarks:m1.PREC");
 
     auto d = ctxt["nmarks:m1.DESC"].peek<std::string>();
     if (d) {
@@ -41,9 +49,10 @@ int main(int argc, char* argv[]) {
 
     while (!g_signal_caught) {
         if (ctxt.sync()) {
-            std::cout << "VAL = " << rbv << std::endl;
-            std::cout << "RBV = " << val << std::endl;
-            std::cout << "DESC = " << desc << std::endl;
+            std::cout << "m1.VAL = " << rbv << std::endl;
+            std::cout << "m1.RBV = " << val << std::endl;
+            std::cout << "m1.DESC = " << desc << std::endl;
+            std::cout << "m1.PREC = " << posx << std::endl;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
