@@ -150,7 +150,10 @@ class ChannelBase {
 
     /// \brief Writes a value to the PV.
     ///
-    /// The type T must be convertible to one of the supported types.
+    /// This template wraps the value in a ValueVariant and dispatches to the
+    /// protocol-specific put() override (CAChannel or PVAChannel). The virtual
+    /// override is protected so users always call this template, and subclasses
+    /// only override the ValueVariant version.
     ///
     /// \param value The value to write.
     /// \return true if the put was sent, false if the channel is disconnected
@@ -252,6 +255,7 @@ class ChannelBase {
 /// For write operations, use put(), or id() for direct CA API access.
 class CAChannel : public ChannelBase {
   public:
+    // Bring base class put<T>() into scope (otherwise hidden by the private override)
     using ChannelBase::put;
 
     CAChannel(const std::string& pv_name) : ChannelBase(pv_name) {
@@ -465,6 +469,7 @@ class CAChannel : public ChannelBase {
 /// \warning TODO: document this.
 class PVAChannel : public ChannelBase {
   public:
+    // Bring base class put<T>() into scope (otherwise hidden by the private override)
     using ChannelBase::put;
 
     PVAChannel(pvxs::client::Context& context, const std::string& pv_name)
