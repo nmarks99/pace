@@ -176,7 +176,13 @@ class ChannelBase {
     /// \return The value as std::optional<T>, or std::nullopt on failure/timeout.
     template <typename T>
     std::optional<T> get(double timeout = 1.0) {
-        detail::ValueVariant value = get_var(timeout);
+        detail::ValueVariant value = get_var("value", timeout);
+        return detail::convert<T>(value);
+    }
+
+    template <typename T>
+    std::optional<T> get(const std::string& field_path, double timeout = 1.0) {
+        detail::ValueVariant value = get_var(field_path, timeout);
         return detail::convert<T>(value);
     }
 
@@ -255,7 +261,7 @@ class ChannelBase {
     virtual bool put_var(const detail::ValueVariant& value) = 0;
 
     /// \brief CA/PVA specific get implementation.
-    virtual detail::ValueVariant get_var(double timeout) = 0;
+    virtual detail::ValueVariant get_var(const std::string& field_path, double timeout) = 0;
 
     /// \brief Informs the CA/PVAChannel to create a monitor.
     virtual void enable_monitor() = 0;
@@ -389,7 +395,7 @@ class CAChannel : public ChannelBase {
     }
 
     /// \brief CA-specific get implementation. Fetches the value via ca_get + ca_pend_io.
-    detail::ValueVariant get_var(double timeout) override {
+    detail::ValueVariant get_var(const std::string& field_path, double timeout) override {
         if (!connected()) {
             return {};
         }
@@ -575,7 +581,15 @@ class CAChannel : public ChannelBase {
 class PVAChannel : public ChannelBase {
   public:
     PVAChannel(pvxs::client::Context& context, const std::string& pv_name)
-        : ChannelBase(pv_name), ctx_(context) {}
+        : ChannelBase(pv_name), ctx_(context) {
+        connection_ = ctx_.connect(pv_name)
+            .onConnect([this]{
+                this->connected_.store(true, std::memory_order_relaxed);
+            })
+            .onDisconnect([this]{
+                this->connected_.store(false, std::memory_order_relaxed);
+            }).exec();
+    }
 
     ~PVAChannel() {
         if (subscription_) {
@@ -597,6 +611,7 @@ class PVAChannel : public ChannelBase {
     std::atomic<bool> connected_{false};
     std::atomic<bool> wants_monitor_{false};
     std::shared_ptr<pvxs::client::Subscription> subscription_;
+    std::shared_ptr<pvxs::client::Connect> connection_;
     pvxs::client::Context& ctx_;
 
     void start_monitor() {
@@ -665,14 +680,15 @@ class PVAChannel : public ChannelBase {
     bool put_var(const detail::ValueVariant& value) override { return false; }
 
     /// \brief PVA-specific get implementation. Fetches the value via pvxs::client::Context::get.
-    detail::ValueVariant get_var(double timeout) override {
+    detail::ValueVariant get_var(const std::string& field_path, double timeout) override {
         if (!connected()) {
+            printf("not connected\n");
             return {};
         }
 
         try {
             auto result = ctx_.get(this->pv_name_).exec()->wait(timeout);
-            if (auto val = result["value"]) {
+            if (auto val = result[field_path]) {
                 detail::ValueVariant var;
                 switch (val.type().code) {
                 case pvxs::TypeCode::Float64:
@@ -842,6 +858,11 @@ class Context {
     ///
     /// \param pv_name  The PV name (e.g. "MyIOC:name.VAL").
     /// \param timeout  Optional timeout.
+    template <typename T>
+    std::optional<T> get(const std::string& pv_name, const std::string& field_path, double timeout = 1.0) {
+        return get_channel(pv_name).get<T>(field_path, timeout);
+    }
+
     template <typename T>
     std::optional<T> get(const std::string& pv_name, double timeout = 1.0) {
         return get_channel(pv_name).get<T>(timeout);

@@ -14,25 +14,34 @@ int main(int argc, char* argv[]) {
 
     std::signal(SIGINT, signal_handler);
 
-    std::string P = "nmarks:";
+    // IOC prefix
+    std::string P = "pva://nick:";
 
-    ezec::Context ctxt;
-    ctxt.add(P+"m1.RBV").monitor();
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    ezec::Context ctxt("pva");
+    ctxt.add(P+"Position");
+    // double x, y, z = 0.0;
+    // ctxt.add(P+"Position").bind(x, "X.value");
+    // ctxt.add(P+"Position").bind(y, "Y.value");
+    // ctxt.add(P+"Position").bind(z, "Z.value");
 
-    double rbv = 0.0;
-    ctxt.bind(rbv, P+"m1.RBV");
+    // Hacky, waiting for PVs to connect
+    std::cout << "Waiting to connect\n";
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
-    while (!g_signal_caught) {
-        if (ctxt.sync()) {
-            if (auto rbv_op = ctxt.peek<double>(P+"m1.RBV"); rbv_op) {
-                std::cout << "Peeked RBV = " << *rbv_op << std::endl;
-            }
-
-            std::cout << "Bound RBV = " << rbv << std::endl;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::cout << "Trying get operations\n";
+    auto x = ctxt.get<double>(P+"Position", "X.value");
+    if (x) {
+        std::cout << "x = " << x.value() << std::endl;
     }
+//
+    // while (!g_signal_caught) {
+        // if (ctxt.sync()) {
+            // std::cout << "X = " << x << std::endl;
+            // std::cout << "Y = " << y << std::endl;
+            // std::cout << "Z = " << z << std::endl;
+        // }
+        // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // }
     std::cout << "\nExiting.\n";
     return 0;
 }
