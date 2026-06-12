@@ -151,21 +151,34 @@ class ChannelBase {
     /// \brief Writes a value to the PV.
     ///
     /// This template wraps the value in a ValueVariant and dispatches to the
-    /// protocol-specific put() override (CAChannel or PVAChannel). The virtual
-    /// override is protected so users always call this template, and subclasses
-    /// only override the ValueVariant version.
+    /// protocol-specific put_var() override (CAChannel or PVAChannel). The
+    /// virtual override is protected so users always call this template, and
+    /// subclasses only override the ValueVariant version.
     ///
     /// \param value The value to write.
     /// \return true if the put was sent, false if the channel is disconnected
     /// or the value is not convertible to a supported type.
     template <typename T>
     bool put(const T& value) {
-        return put(detail::ValueVariant(value));
+        return put_var(detail::ValueVariant(value));
     }
 
     /// \brief Write a string literal to the PV
     /// \overload
-    bool put(const char* value) { return put(detail::ValueVariant(std::string(value))); }
+    bool put(const char* value) { return put_var(detail::ValueVariant(std::string(value))); }
+
+    /// \brief Synchronous get. Fetches the current value from the IOC.
+    ///
+    /// Dispatches to the protocol-specific get_var() override. Unlike peek(),
+    /// this performs a network round-trip to get a fresh value.
+    ///
+    /// \param timeout Timeout in seconds for the get operation.
+    /// \return The value as std::optional<T>, or std::nullopt on failure/timeout.
+    template <typename T>
+    std::optional<T> get(double timeout = 1.0) {
+        detail::ValueVariant value = get_var(timeout);
+        return detail::convert<T>(value);
+    }
 
     /// \brief Bind a user variable to receive monitor updates from this channel.
     ///
@@ -192,6 +205,14 @@ class ChannelBase {
         slots_.push_back(std::move(slot));
 
         // Inform the child class we need to create a subscription
+        enable_monitor();
+    }
+
+    /// \brief Start monitoring the PV without binding a variable.
+    ///
+    /// The PV must have been added to the Context first. After calling
+    /// monitor(), use peek<T>() to read the latest value on demand.
+    void monitor() {
         enable_monitor();
     }
 
@@ -231,7 +252,10 @@ class ChannelBase {
 
   protected:
     /// \brief CA/PVA specific put implementation.
-    virtual bool put(const detail::ValueVariant& value) = 0;
+    virtual bool put_var(const detail::ValueVariant& value) = 0;
+
+    /// \brief CA/PVA specific get implementation.
+    virtual detail::ValueVariant get_var(double timeout) = 0;
 
     /// \brief Informs the CA/PVAChannel to create a monitor.
     virtual void enable_monitor() = 0;
@@ -247,17 +271,13 @@ class ChannelBase {
 /// \brief Channel Access implementation of ChannelBase.
 ///
 /// Connects to a single PV via the EPICS Channel Access protocol. A CA context
-/// (e.g. ezec::Context) must exist before construction. On connection, a
-/// monitor subscription is created automatically and the channel begins
-/// receiving value updates into the staged_value_. For floating-point PVs,
-/// the record's PREC field is fetched at connection time.
+/// (e.g. ezec::Context) must exist before construction. A monitor subscription
+/// is created when bind() or monitor() is called. For floating-point PVs, the
+/// record's PREC field is fetched at monitor start time.
 ///
 /// For write operations, use put(), or id() for direct CA API access.
 class CAChannel : public ChannelBase {
   public:
-    // Bring base class put<T>() into scope (otherwise hidden by the private override)
-    using ChannelBase::put;
-
     CAChannel(const std::string& pv_name) : ChannelBase(pv_name) {
         if (!ca_current_context()) {
             throw std::runtime_error("No CA context. Call ca_context_create() before creating a CAChannel.");
@@ -295,8 +315,8 @@ class CAChannel : public ChannelBase {
     chid channel_id_;
     evid evt_id_ = nullptr;
 
-    /// \brief CA-specific put implementation. Sends the value via ca_put.
-    bool put(const detail::ValueVariant& value) override {
+    /// \brief CA-specific put implementation. Sends the value via ca_put + ca_flush_io.
+    bool put_var(const detail::ValueVariant& value) override {
         if (!connected()) {
             return false;
         }
@@ -368,6 +388,86 @@ class CAChannel : public ChannelBase {
         }
     }
 
+    /// \brief CA-specific get implementation. Fetches the value via ca_get + ca_pend_io.
+    detail::ValueVariant get_var(double timeout) override {
+        if (!connected()) {
+            return {};
+        }
+
+        detail::ValueVariant value;
+        auto native = ca_field_type(channel_id_);
+        auto dbr = dbf_type_to_DBR(native);
+
+        switch (dbr) {
+        case DBR_DOUBLE: {
+            dbr_double_t data;
+            ca_get(DBR_DOUBLE, channel_id_, &data);
+            if (ca_pend_io(timeout) != ECA_NORMAL) {
+                return {};
+            }
+            value = static_cast<double>(data);
+            break;
+        }
+        case DBR_FLOAT: {
+            dbr_float_t data;
+            ca_get(DBR_FLOAT, channel_id_, &data);
+            if (ca_pend_io(timeout) != ECA_NORMAL) {
+                return {};
+            }
+            value = static_cast<double>(data);
+            break;
+        }
+        case DBR_LONG: {
+            dbr_long_t data;
+            ca_get(DBR_LONG, channel_id_, &data);
+            if (ca_pend_io(timeout) != ECA_NORMAL) {
+                return {};
+            }
+            value = static_cast<int>(data);
+            break;
+        }
+        case DBR_SHORT: {
+            dbr_short_t data;
+            ca_get(DBR_SHORT, channel_id_, &data);
+            if (ca_pend_io(timeout) != ECA_NORMAL) {
+                return {};
+            }
+            value = static_cast<int>(data);
+            break;
+        }
+        case DBR_CHAR: {
+            dbr_char_t data;
+            ca_get(DBR_CHAR, channel_id_, &data);
+            if (ca_pend_io(timeout) != ECA_NORMAL) {
+                return {};
+            }
+            value = static_cast<int>(data);
+            break;
+        }
+        case DBR_ENUM: {
+            dbr_enum_t data;
+            ca_get(DBR_ENUM, channel_id_, &data);
+            if (ca_pend_io(timeout) != ECA_NORMAL) {
+                return {};
+            }
+            value = static_cast<int>(data);
+            break;
+        }
+        case DBR_STRING: {
+            dbr_string_t data;
+            ca_get(DBR_STRING, channel_id_, &data);
+            if (ca_pend_io(timeout) != ECA_NORMAL) {
+                return {};
+            }
+            value = static_cast<std::string>(data);
+            break;
+        }
+
+        }
+        return value;
+    }
+
+    /// \brief Extracts a scalar value from a CA subscription event.
     static detail::ValueVariant get_scalar_event(struct event_handler_args evt) {
         detail::ValueVariant value;
         switch (evt.type) {
@@ -396,6 +496,7 @@ class CAChannel : public ChannelBase {
         return value;
     }
 
+    /// \brief Extracts an array value from a CA subscription event.
     static detail::ValueVariant get_array_event(struct event_handler_args evt) {
         detail::ValueVariant value;
         auto count = static_cast<size_t>(evt.count);
@@ -465,13 +566,14 @@ class CAChannel : public ChannelBase {
     }
 };
 
-/// \brief PVAccess implementation of ChannelBase.
-/// \warning TODO: document this.
+/// \brief PV Access implementation of ChannelBase using PVXS.
+///
+/// Connects to a single PV via the EPICS PV Access protocol. A
+/// pvxs::client::Context is passed at construction. A monitor subscription is
+/// created when bind() or monitor() is called. Supports NTScalar PVs (via
+/// staged_value_) and custom structured PVs (via pvxs_value_ with field paths).
 class PVAChannel : public ChannelBase {
   public:
-    // Bring base class put<T>() into scope (otherwise hidden by the private override)
-    using ChannelBase::put;
-
     PVAChannel(pvxs::client::Context& context, const std::string& pv_name)
         : ChannelBase(pv_name), ctx_(context) {}
 
@@ -559,20 +661,69 @@ class PVAChannel : public ChannelBase {
                             .exec();
     }
 
-    bool put(const detail::ValueVariant& value) override { return false; }
+    /// \brief PVA-specific put implementation. Not yet implemented.
+    bool put_var(const detail::ValueVariant& value) override { return false; }
+
+    /// \brief PVA-specific get implementation. Fetches the value via pvxs::client::Context::get.
+    detail::ValueVariant get_var(double timeout) override {
+        if (!connected()) {
+            return {};
+        }
+
+        try {
+            auto result = ctx_.get(this->pv_name_).exec()->wait(timeout);
+            if (auto val = result["value"]) {
+                detail::ValueVariant var;
+                switch (val.type().code) {
+                case pvxs::TypeCode::Float64:
+                    var = val.as<double>();
+                    break;
+                case pvxs::TypeCode::Float32:
+                    var = static_cast<double>(val.as<float>());
+                    break;
+                case pvxs::TypeCode::Int32:
+                    var = static_cast<int>(val.as<int32_t>());
+                    break;
+                case pvxs::TypeCode::Int16:
+                    var = static_cast<int>(val.as<int16_t>());
+                    break;
+                case pvxs::TypeCode::UInt16:
+                    var = static_cast<int>(val.as<uint16_t>());
+                    break;
+                case pvxs::TypeCode::Int8:
+                    var = static_cast<int>(val.as<int8_t>());
+                    break;
+                case pvxs::TypeCode::UInt8:
+                    var = static_cast<int>(val.as<uint8_t>());
+                    break;
+                case pvxs::TypeCode::String:
+                    var = val.as<std::string>();
+                    break;
+                default:
+                    var = {};
+                }
+                return var;
+            } else {
+                return {};
+            }
+        } catch (...) {
+            return {};
+        }
+    }
+
 };
 
 /// \brief Manages a collection of PV channels with a single sync() call.
 ///
-/// Context is the primary interface for monitoring multiple PVs under a
-/// single protocol (CA or PVA). For an application that supports both,
-/// create two Context's, one for each protocol. Bind local variables with
-/// bind(), then call sync() periodically to update all bound variables at
-/// once. Channels are created automatically on first use.
+/// Context is the primary interface for monitoring multiple PVs. It supports
+/// both CA and PVA protocols (including mixed usage via protocol prefixes).
+/// Add PVs with add(), bind local variables with bind(), then call sync()
+/// periodically to update all bound variables at once.
 ///
 /// Example usage:
 /// \code
 ///     ezec::Context ctxt;
+///     ctxt.add("MyIOC:", {"m1.RBV", "m1.DMOV"});
 ///
 ///     double position = 0.0;
 ///     int done = 0;
@@ -623,12 +774,13 @@ class Context {
 
     /// \brief Bind a local variable to a PV.
     ///
-    /// If the PV has not been seen before, a channel is created automatically.
-    /// The bound variable must outlive the Context. Multiple variables
-    /// (including different types) can be bound to the same PV.
+    /// The PV must have been added with add() first. The bound variable must
+    /// outlive the Context. Multiple variables (including different types) can
+    /// be bound to the same PV. Also starts the monitor if not already running.
     ///
     /// \param var  Reference to the local variable.
-    /// \param pv_name  The PV name (e.g. "MyIOC:name.VAL").
+    /// \param pv_name  The PV name, must match a previous add() call.
+    /// \param field_path  Field path for PVA structured PVs (default: "value").
     template <typename T>
     void bind(T& var, const std::string& pv_name, const std::string& field_path = "value") {
         auto [pv_name_strip, _] = parse_protocol_pv_name(pv_name);
@@ -671,15 +823,46 @@ class Context {
     /// \overload
     ChannelBase& operator[](const std::string& pv_name) { return get_channel(pv_name); }
 
-    /// \brief Write a value to a PV.
+    /// \brief Write a value to a PV (fire-and-forget).
     ///
-    /// Throws if the PV has not been registered in the Context.
+    /// The PV must have been added with add() first.
+    /// Returns true if the value was sent, false if disconnected.
     ///
-    /// \param pv_name  The PV name (e.g. "MyIOC:name.VAL").
+    /// \param pv_name  The PV name, must match a previous add() call.
     /// \param value    The value to write.
     template <typename T>
-    void put(const std::string& pv_name, const T& value) {
-        get_channel(pv_name).put(value);
+    bool put(const std::string& pv_name, const T& value) {
+        return get_channel(pv_name).put(value);
+    }
+
+    /// \brief Synchronous get.
+    ///
+    /// Throws if the PV has not been registered in the Context.
+    /// Returns an optional<T> which is nullopt on failure/timeout.
+    ///
+    /// \param pv_name  The PV name (e.g. "MyIOC:name.VAL").
+    /// \param timeout  Optional timeout.
+    template <typename T>
+    std::optional<T> get(const std::string& pv_name, double timeout = 1.0) {
+        return get_channel(pv_name).get<T>(timeout);
+    }
+
+    /// \brief Starts a monitor for the given PV
+    ///
+    /// \param pv_name The PV name (e.g. "MyIOC:name.VAL").
+    void monitor(const std::string& pv_name) {
+        get_channel(pv_name).monitor();
+    }
+
+    /// \brief Returns the latest value from the monitor as the request type.
+    ///
+    /// Returns The latest value from the monitor as std::optional<T>.
+    /// If the conversion to T fails, the returned value is std::nullopt;
+    ///
+    /// \param pv_name The PV name (e.g. "MyIOC:name.VAL").
+    template <typename T>
+    std::optional<T> peek(const std::string& pv_name) {
+        return get_channel(pv_name).peek<T>();
     }
 
     /// \brief Add a PV to the context
