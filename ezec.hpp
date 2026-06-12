@@ -216,7 +216,7 @@ class ChannelBase {
 
     /// \brief Start monitoring the PV without binding a variable.
     ///
-    /// The PV must have been added to the Context first. After calling
+    /// The PV must have been added to the context and connect first. After calling
     /// monitor(), use peek<T>() to read the latest value on demand.
     void monitor() {
         enable_monitor();
@@ -682,7 +682,6 @@ class PVAChannel : public ChannelBase {
     /// \brief PVA-specific get implementation. Fetches the value via pvxs::client::Context::get.
     detail::ValueVariant get_var(const std::string& field_path, double timeout) override {
         if (!connected()) {
-            printf("not connected\n");
             return {};
         }
 
@@ -886,32 +885,42 @@ class Context {
         return get_channel(pv_name).peek<T>();
     }
 
-    /// \brief Add a PV to the context
+    /// \brief Add a PV to the context and connect
     ///
     /// \param pv_name The PV name, possibly with protocol.
-    ChannelBase& add(const std::string& pv_name) {
+    /// \param timeout Optional connection timeout. If 0, returns immediately
+    /// and doesn't wait for connection
+    ChannelBase& connect(const std::string& pv_name, double timeout = 0.0) {
         auto [pv_name_strip, protocol] = parse_protocol_pv_name(pv_name);
-        return emplace_pv_in_channel_map(protocol, pv_name_strip);
+        ChannelBase& channel_base = emplace_pv_in_channel_map(protocol, pv_name_strip);
+        wait_connection(pv_name_strip, timeout);
+        return channel_base;
     }
 
-    /// \brief Add several PVs to the context
+    /// \brief Add several PVs to the context and connect
     ///
     /// \param pv_names List of PV names, possibly with protocol.
-    void add(std::initializer_list<std::string> pv_names) {
+    /// \param timeout Optional connection timeout. If 0, returns immediately
+    /// and doesn't wait for connection
+    void connect(std::initializer_list<std::string> pv_names, double timeout = 0.0) {
         for (const auto& pv_name : pv_names) {
             auto [pv_name_strip, protocol] = parse_protocol_pv_name(pv_name);
             emplace_pv_in_channel_map(protocol, pv_name_strip);
+            wait_connection(pv_name_strip, timeout);
         }
     }
 
-    /// \brief Add several PVs to the context with a common prefix
+    /// \brief Add several PVs with a common prefix to the context and connect
     ///
     /// \param prefix Prefix to apply to PV names.
     /// \param pv_names List of PV names, possibly with protocol.
-    void add(const std::string& prefix, std::initializer_list<std::string> pv_names) {
+    /// \param timeout Optional connection timeout. If 0, returns immediately
+    /// and doesn't wait for connection
+    void connect(const std::string& prefix, std::initializer_list<std::string> pv_names, double timeout = 0.0) {
         for (const std::string& pv_name : pv_names) {
             auto [pv_name_strip, protocol] = parse_protocol_pv_name(pv_name);
             emplace_pv_in_channel_map(protocol, prefix + pv_name_strip);
+            wait_connection(pv_name_strip, timeout);
         }
     }
 
@@ -922,6 +931,27 @@ class Context {
     bool pva_initialized_ = false;
     std::unordered_map<std::string, std::unique_ptr<ChannelBase>> channel_map_;
     std::optional<pvxs::client::Context> pvxs_ctxt_;
+
+    /// \brief Waits for the given PV to connect before returning. Throws on timeout.
+    void wait_connection(const std::string& pv_name, double timeout) {
+        if (timeout <= 0.0) {
+            return;
+        }
+        const auto start = std::chrono::steady_clock::now();
+        while (true) {
+            const long timeout_ms = timeout*1000.0;
+            const auto now = std::chrono::steady_clock::now();
+            const auto elap = std::chrono::duration_cast<std::chrono::milliseconds>(now - start);
+            if (elap.count() > timeout_ms) {
+                throw std::runtime_error("Timed out waiting to connect to " + pv_name);
+                break;
+            }
+            if (get_channel(pv_name).connected()) {
+                printf("Connected to %s after %ld ms\n", pv_name.c_str(), elap.count());
+                break;
+            }
+        }
+    }
 
     ChannelBase& emplace_pv_in_channel_map(const std::string& protocol, const std::string& pv_name) {
         auto it = channel_map_.find(pv_name);

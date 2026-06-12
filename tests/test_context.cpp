@@ -2,7 +2,7 @@
 
 TEST_F(SoftIocFixture, context_BindAllRecords) {
     ezec::Context ctx;
-    ctx.add("ezec:test:", {"ao.VAL", "longout.VAL", "stringout.VAL", "mbbo.VAL"});
+    ctx.connect("ezec:test:", {"ao.VAL", "longout.VAL", "stringout.VAL", "mbbo.VAL"});
 
     double ao_val = 0.0;
     int longout_val = 0;
@@ -31,7 +31,7 @@ TEST_F(SoftIocFixture, context_BindAllRecords) {
 
 TEST_F(SoftIocFixture, context_BindMultipleTypesToSameChannel) {
     ezec::Context ctx;
-    ctx.add("ezec:test:ao.VAL");
+    ctx.connect("ezec:test:ao.VAL");
 
     double ao_double = 0.0;
     int ao_int = 0;
@@ -64,7 +64,7 @@ TEST_F(SoftIocFixture, context_BindBeforeAdd) {
 
 TEST_F(SoftIocFixture, context_GetChannel) {
     ezec::Context ctx;
-    ctx.add("ezec:test:ao.VAL");
+    ctx.connect("ezec:test:ao.VAL");
 
     auto& channel = ctx.get_channel("ezec:test:ao.VAL");
 
@@ -82,7 +82,7 @@ TEST_F(SoftIocFixture, context_GetChannelNotRegistered) {
 
 TEST_F(SoftIocFixture, context_NoMonitorUntilBind) {
     ezec::Context ctx;
-    ctx.add("ezec:test:ao.VAL");
+    ctx.connect("ezec:test:ao.VAL");
 
     auto& channel = ctx.get_channel("ezec:test:ao.VAL");
 
@@ -104,7 +104,7 @@ TEST_F(SoftIocFixture, context_NoMonitorUntilBind) {
 
 TEST_F(SoftIocFixture, context_PutDouble) {
     ezec::Context ctx;
-    ctx.add("ezec:test:ao.VAL");
+    ctx.connect("ezec:test:ao.VAL");
 
     double val = 0.0;
     ctx.bind(val, "ezec:test:ao.VAL");
@@ -120,7 +120,7 @@ TEST_F(SoftIocFixture, context_PutDouble) {
 
 TEST_F(SoftIocFixture, context_PutInt) {
     ezec::Context ctx;
-    ctx.add("ezec:test:longout.VAL");
+    ctx.connect("ezec:test:longout.VAL");
 
     int val = 0;
     ctx.bind(val, "ezec:test:longout.VAL");
@@ -136,7 +136,7 @@ TEST_F(SoftIocFixture, context_PutInt) {
 
 TEST_F(SoftIocFixture, context_PutString) {
     ezec::Context ctx;
-    ctx.add("ezec:test:stringout.VAL");
+    ctx.connect("ezec:test:stringout.VAL");
 
     std::string val;
     ctx.bind(val, "ezec:test:stringout.VAL");
@@ -152,7 +152,7 @@ TEST_F(SoftIocFixture, context_PutString) {
 
 TEST_F(SoftIocFixture, context_PutViaContextMethod) {
     ezec::Context ctx;
-    ctx.add("ezec:test:ao.VAL");
+    ctx.connect("ezec:test:ao.VAL");
 
     double val = 0.0;
     ctx.bind(val, "ezec:test:ao.VAL");
@@ -168,7 +168,7 @@ TEST_F(SoftIocFixture, context_PutViaContextMethod) {
 
 TEST_F(SoftIocFixture, context_PutViaRawCA) {
     ezec::Context ctx;
-    ctx.add("ezec:test:ao.VAL");
+    ctx.connect("ezec:test:ao.VAL");
 
     double val = 0.0;
     ctx.bind(val, "ezec:test:ao.VAL");
@@ -189,7 +189,7 @@ TEST_F(SoftIocFixture, context_PutViaRawCA) {
 
 TEST_F(SoftIocFixture, context_AddWithProtocolPrefix) {
     ezec::Context ctx;
-    ctx.add("ca://ezec:test:ao.VAL");
+    ctx.connect("ca://ezec:test:ao.VAL");
 
     double val = 0.0;
     ctx.bind(val, "ezec:test:ao.VAL");
@@ -200,7 +200,7 @@ TEST_F(SoftIocFixture, context_AddWithProtocolPrefix) {
 
 TEST_F(SoftIocFixture, context_AddWithPrefixAndProtocol) {
     ezec::Context ctx;
-    ctx.add("ezec:test:", {"ca://ao.VAL", "ca://longout.VAL"});
+    ctx.connect("ezec:test:", {"ca://ao.VAL", "ca://longout.VAL"});
 
     double ao_val = 0.0;
     int longout_val = 0;
@@ -224,8 +224,8 @@ TEST_F(SoftIocFixture, context_AddWithPrefixAndProtocol) {
 
 TEST_F(SoftIocPVAFixture, context_MixedProtocol_BindDouble) {
     ezec::Context ctx;
-    ctx.add("ca://ezec:test:ao.VAL");
-    ctx.add("pva://ezec:test:ao");
+    ctx.connect("ca://ezec:test:ao.VAL");
+    ctx.connect("pva://ezec:test:ao");
 
     double ca_val = 0.0;
     double pva_val = 0.0;
@@ -247,12 +247,12 @@ TEST_F(SoftIocPVAFixture, context_MixedProtocol_BindDouble) {
 
 TEST_F(SoftIocPVAFixture, context_MixedProtocol_BindAllTypes) {
     ezec::Context ctx;
-    ctx.add("ca://ezec:test:ao.VAL");
-    ctx.add("ca://ezec:test:longout.VAL");
-    ctx.add("ca://ezec:test:stringout.VAL");
-    ctx.add("pva://ezec:test:ao");
-    ctx.add("pva://ezec:test:longout");
-    ctx.add("pva://ezec:test:stringout");
+    ctx.connect("ca://ezec:test:ao.VAL");
+    ctx.connect("ca://ezec:test:longout.VAL");
+    ctx.connect("ca://ezec:test:stringout.VAL");
+    ctx.connect("pva://ezec:test:ao");
+    ctx.connect("pva://ezec:test:longout");
+    ctx.connect("pva://ezec:test:stringout");
 
     double ca_ao = 0.0;
     int ca_longout = 0;
@@ -289,8 +289,8 @@ TEST_F(SoftIocPVAFixture, context_MixedProtocol_BindAllTypes) {
 
 TEST_F(SoftIocPVAFixture, context_MixedProtocol_PutViaCAThenReadViaPVA) {
     ezec::Context ctx;
-    ctx.add("ca://ezec:test:ao.VAL");
-    ctx.add("pva://ezec:test:ao");
+    ctx.connect("ca://ezec:test:ao.VAL");
+    ctx.connect("pva://ezec:test:ao");
 
     double ca_val = 0.0;
     double pva_val = 0.0;

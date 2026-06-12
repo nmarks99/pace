@@ -2,7 +2,7 @@
 
 TEST_F(SoftIocPVAFixture, pva_BindDouble) {
     ezec::Context ctx("pva");
-    ctx.add("ezec:test:ao");
+    ctx.connect("ezec:test:ao");
 
     double val = 0.0;
     ctx.bind(val, "ezec:test:ao");
@@ -13,7 +13,7 @@ TEST_F(SoftIocPVAFixture, pva_BindDouble) {
 
 TEST_F(SoftIocPVAFixture, pva_BindInt) {
     ezec::Context ctx("pva");
-    ctx.add("ezec:test:longout");
+    ctx.connect("ezec:test:longout");
 
     int val = 0;
     ctx.bind(val, "ezec:test:longout");
@@ -24,7 +24,7 @@ TEST_F(SoftIocPVAFixture, pva_BindInt) {
 
 TEST_F(SoftIocPVAFixture, pva_BindString) {
     ezec::Context ctx("pva");
-    ctx.add("ezec:test:stringout");
+    ctx.connect("ezec:test:stringout");
 
     std::string val;
     ctx.bind(val, "ezec:test:stringout");
@@ -35,7 +35,7 @@ TEST_F(SoftIocPVAFixture, pva_BindString) {
 
 TEST_F(SoftIocPVAFixture, pva_BindMultipleTypes) {
     ezec::Context ctx("pva");
-    ctx.add("ezec:test:ao");
+    ctx.connect("ezec:test:ao");
 
     double ao_double = 0.0;
     int ao_int = 0;
@@ -61,9 +61,9 @@ TEST_F(SoftIocPVAFixture, pva_BindMultipleTypes) {
 
 TEST_F(SoftIocPVAFixture, pva_BindAllRecords) {
     ezec::Context ctx("pva");
-    ctx.add("ezec:test:ao");
-    ctx.add("ezec:test:longout");
-    ctx.add("ezec:test:stringout");
+    ctx.connect("ezec:test:ao");
+    ctx.connect("ezec:test:longout");
+    ctx.connect("ezec:test:stringout");
 
     double ao_val = 0.0;
     int longout_val = 0;
@@ -89,7 +89,7 @@ TEST_F(SoftIocPVAFixture, pva_BindAllRecords) {
 
 TEST_F(SoftIocPVAFixture, pva_MonitorCustomStructure) {
     ezec::Context ctx("pva");
-    ctx.add("ezec:test:Position");
+    ctx.connect("ezec:test:Position");
 
     double x = 0.0;
     double y = 0.0;
