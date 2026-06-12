@@ -11,14 +11,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "ezec.hpp"
+#include "pace.hpp"
 
 using namespace std::chrono_literals;
 
 class SoftIocFixture : public ::testing::Test {
   protected:
     pid_t ioc_pid_ = -1;
-    // std::unique_ptr<ezec::Context> ctx_;
+    // std::unique_ptr<pace::Context> ctx_;
 
     void SetUp() override {
         std::string softIoc = std::string(EPICS_BASE) + "/bin/" + EPICS_HOST_ARCH + "/softIoc";
@@ -39,7 +39,7 @@ class SoftIocFixture : public ::testing::Test {
 
         std::this_thread::sleep_for(2s);
 
-        // ctx_ = std::make_unique<ezec::Context>();
+        // ctx_ = std::make_unique<pace::Context>();
     }
 
     void TearDown() override {
@@ -52,14 +52,14 @@ class SoftIocFixture : public ::testing::Test {
     }
 };
 
-inline void wait_connect(ezec::CAChannel& channel, int timeout_sec = 5) {
+inline void wait_connect(pace::CAChannel& channel, int timeout_sec = 5) {
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
     while (!channel.connected() && std::chrono::steady_clock::now() < deadline) {
         std::this_thread::sleep_for(50ms);
     }
 }
 
-inline bool wait_sync(ezec::CAChannel& channel, int timeout_sec = 5) {
+inline bool wait_sync(pace::CAChannel& channel, int timeout_sec = 5) {
     bool new_data = false;
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
     while (!new_data && std::chrono::steady_clock::now() < deadline) {
@@ -71,7 +71,7 @@ inline bool wait_sync(ezec::CAChannel& channel, int timeout_sec = 5) {
     return new_data;
 }
 
-inline bool wait_context_sync(ezec::Context& ctx, int timeout_sec = 5) {
+inline bool wait_context_sync(pace::Context& ctx, int timeout_sec = 5) {
     bool new_data = false;
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
     while (!new_data && std::chrono::steady_clock::now() < deadline) {

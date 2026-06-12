@@ -1,8 +1,8 @@
 #include "test_helpers.hpp"
 
 TEST_F(SoftIocFixture, longout_BindInt) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:longout.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:longout.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -22,8 +22,8 @@ TEST_F(SoftIocFixture, longout_BindInt) {
 }
 
 TEST_F(SoftIocFixture, longout_BindDouble) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:longout.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:longout.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -41,8 +41,8 @@ TEST_F(SoftIocFixture, longout_BindDouble) {
 }
 
 TEST_F(SoftIocFixture, longout_BindString) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:longout.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:longout.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -60,8 +60,8 @@ TEST_F(SoftIocFixture, longout_BindString) {
 }
 
 TEST_F(SoftIocFixture, longout_BindMultipleTypes) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:longout.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:longout.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -88,8 +88,8 @@ TEST_F(SoftIocFixture, longout_BindMultipleTypes) {
 
 
 TEST_F(SoftIocFixture, longout_FLNKBindString) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:longout.FLNK");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:longout.FLNK");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";

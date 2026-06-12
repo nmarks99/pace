@@ -1,8 +1,8 @@
 #include "test_helpers.hpp"
 
 TEST_F(SoftIocFixture, ao_BindDouble) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:ao.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:ao.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -22,8 +22,8 @@ TEST_F(SoftIocFixture, ao_BindDouble) {
 }
 
 TEST_F(SoftIocFixture, ao_BindMultipleDoubles) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:ao.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:ao.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -46,8 +46,8 @@ TEST_F(SoftIocFixture, ao_BindMultipleDoubles) {
 }
 
 TEST_F(SoftIocFixture, ao_BindString) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:ao.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:ao.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -66,8 +66,8 @@ TEST_F(SoftIocFixture, ao_BindString) {
 }
 
 TEST_F(SoftIocFixture, ao_BindInt) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:ao.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:ao.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -86,8 +86,8 @@ TEST_F(SoftIocFixture, ao_BindInt) {
 }
 
 TEST_F(SoftIocFixture, ao_BindMultipleTypes) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:ao.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:ao.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -113,8 +113,8 @@ TEST_F(SoftIocFixture, ao_BindMultipleTypes) {
 }
 
 TEST_F(SoftIocFixture, ao_NoMonitorUntilBind) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:ao.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:ao.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";

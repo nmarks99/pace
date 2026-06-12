@@ -2,8 +2,8 @@
 #include "test_helpers.hpp"
 
 TEST_F(SoftIocFixture, wfchar_BindVectorInt) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:wfchar.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:wfchar.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -17,8 +17,8 @@ TEST_F(SoftIocFixture, wfchar_BindVectorInt) {
 }
 
 TEST_F(SoftIocFixture, wfdouble_BindVectorDouble) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:wfdouble.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:wfdouble.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";

@@ -1,17 +1,17 @@
-record(ao, "ezec:test:ao") {
+record(ao, "pace:test:ao") {
     field(VAL, 3.14)
     field(PREC, 2)
 }
 
-record(longout, "ezec:test:longout") {
+record(longout, "pace:test:longout") {
     field(VAL, 42)
 }
 
-record(stringout, "ezec:test:stringout") {
+record(stringout, "pace:test:stringout") {
     field(VAL, "Hello World")
 }
 
-record(mbbo, "ezec:test:mbbo") {
+record(mbbo, "pace:test:mbbo") {
     field(ZRVL, 0)
     field(ONVL, 1)
     field(TWVL, 2)
@@ -20,41 +20,41 @@ record(mbbo, "ezec:test:mbbo") {
     field(TWST, "Two")
 }
 
-record(waveform, "ezec:test:wfchar") {
+record(waveform, "pace:test:wfchar") {
     field(FTVL, "CHAR")
     field(INP, "{const: [1,2,3]}")
     field(NELM, 3)
 }
 
-record(waveform, "ezec:test:wfdouble") {
+record(waveform, "pace:test:wfdouble") {
     field(FTVL, "DOUBLE")
     field(INP, "{const: [1.11,2.22,3.33]}")
     field(NELM, 3)
 }
 
-record(ao, "ezec:test:X") {
+record(ao, "pace:test:X") {
     field(PREC, 3)
     field(VAL, 1.11)
     info(Q:group, {
-        "ezec:test:Position" : {
+        "pace:test:Position" : {
             "X" : {+channel : "VAL"}
         }
     })
 }
-record(ao, "ezec:test:Y") {
+record(ao, "pace:test:Y") {
     field(PREC, 3)
     field(VAL, 2.22)
     info(Q:group, {
-        "ezec:test:Position" : {
+        "pace:test:Position" : {
             "Y" : {+channel : "VAL"}
         }
     })
 }
-record(ao, "ezec:test:Z") {
+record(ao, "pace:test:Z") {
     field(PREC, 3)
     field(VAL, 3.33)
     info(Q:group, {
-        "ezec:test:Position" : {
+        "pace:test:Position" : {
             "Z" : {+channel : "VAL"}
         }
     })

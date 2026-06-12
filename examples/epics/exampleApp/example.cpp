@@ -4,7 +4,7 @@
 #include <thread>
 #include <chrono>
 
-#include "ezec.hpp"
+#include "pace.hpp"
 
 // Used to catch ctrl+c and fail gracefully.
 volatile std::sig_atomic_t g_signal_caught = 0;
@@ -15,16 +15,17 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, signal_handler);
 
     // IOC prefix
-    std::string P = "nick:";
+    std::string P = "nmarks:";
 
-    ezec::Context ctxt;
+    pace::Context ctxt;
     ctxt.connect("pva://"+P+"Position", 1.0);
     ctxt.connect(P+"m1.RBV", 1.0);
     ctxt.connect(P+"m1.DESC", 1.0);
+    ctxt.connect(P+"m1.VAL", 1.0);
 
     std::cout << "Trying get operations\n";
 
-    if (auto desc = ctxt.get<double>(P+"m1.DESC")) {
+    if (auto desc = ctxt.get<std::string>(P+"m1.DESC")) {
         std::cout << "DESC = " << *desc << std::endl;
     }
 
@@ -40,6 +41,19 @@ int main(int argc, char* argv[]) {
     }
     if (auto z = ctxt.get<double>(P+"Position", "Z.value")) {
         std::cout << "Z = " << *z << std::endl;
+    }
+
+    ctxt[P+"m1.DESC"] = "Motor 1";
+    ctxt[P+"m1.VAL"] = 3.14;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    if (auto desc = ctxt.get<std::string>(P+"m1.DESC")) {
+        std::cout << "DESC = " << *desc << std::endl;
+    }
+
+    if (auto rbv = ctxt.get<double>(P+"m1.RBV")) {
+        std::cout << "RBV = " << *rbv << std::endl;
     }
 
     // while (!g_signal_caught) {

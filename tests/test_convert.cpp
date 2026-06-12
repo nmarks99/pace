@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
-#include "ezec.hpp"
+#include "pace.hpp"
 
-using ezec::detail::convert;
-using ezec::detail::ValueVariant;
+using pace::detail::convert;
+using pace::detail::ValueVariant;
 
 TEST(Convert, DoubleToDouble) {
     ValueVariant v{3.14};

@@ -1,49 +1,49 @@
 #include "test_helpers.hpp"
 
 TEST_F(SoftIocPVAFixture, pva_BindDouble) {
-    ezec::Context ctx("pva");
-    ctx.connect("ezec:test:ao");
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:ao");
 
     double val = 0.0;
-    ctx.bind(val, "ezec:test:ao");
+    ctx.bind(val, "pace:test:ao");
 
     ASSERT_TRUE(wait_context_sync(ctx)) << "No monitor update received within timeout";
     EXPECT_DOUBLE_EQ(val, 3.14);
 }
 
 TEST_F(SoftIocPVAFixture, pva_BindInt) {
-    ezec::Context ctx("pva");
-    ctx.connect("ezec:test:longout");
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:longout");
 
     int val = 0;
-    ctx.bind(val, "ezec:test:longout");
+    ctx.bind(val, "pace:test:longout");
 
     ASSERT_TRUE(wait_context_sync(ctx)) << "No monitor update received within timeout";
     EXPECT_EQ(val, 42);
 }
 
 TEST_F(SoftIocPVAFixture, pva_BindString) {
-    ezec::Context ctx("pva");
-    ctx.connect("ezec:test:stringout");
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:stringout");
 
     std::string val;
-    ctx.bind(val, "ezec:test:stringout");
+    ctx.bind(val, "pace:test:stringout");
 
     ASSERT_TRUE(wait_context_sync(ctx)) << "No monitor update received within timeout";
     EXPECT_EQ(val, "Hello World");
 }
 
 TEST_F(SoftIocPVAFixture, pva_BindMultipleTypes) {
-    ezec::Context ctx("pva");
-    ctx.connect("ezec:test:ao");
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:ao");
 
     double ao_double = 0.0;
     int ao_int = 0;
     std::string ao_str;
 
-    ctx.bind(ao_double, "ezec:test:ao");
-    ctx.bind(ao_int, "ezec:test:ao");
-    ctx.bind(ao_str, "ezec:test:ao");
+    ctx.bind(ao_double, "pace:test:ao");
+    ctx.bind(ao_int, "pace:test:ao");
+    ctx.bind(ao_str, "pace:test:ao");
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (std::chrono::steady_clock::now() < deadline) {
@@ -60,18 +60,18 @@ TEST_F(SoftIocPVAFixture, pva_BindMultipleTypes) {
 }
 
 TEST_F(SoftIocPVAFixture, pva_BindAllRecords) {
-    ezec::Context ctx("pva");
-    ctx.connect("ezec:test:ao");
-    ctx.connect("ezec:test:longout");
-    ctx.connect("ezec:test:stringout");
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:ao");
+    ctx.connect("pace:test:longout");
+    ctx.connect("pace:test:stringout");
 
     double ao_val = 0.0;
     int longout_val = 0;
     std::string stringout_val;
 
-    ctx.bind(ao_val, "ezec:test:ao");
-    ctx.bind(longout_val, "ezec:test:longout");
-    ctx.bind(stringout_val, "ezec:test:stringout");
+    ctx.bind(ao_val, "pace:test:ao");
+    ctx.bind(longout_val, "pace:test:longout");
+    ctx.bind(stringout_val, "pace:test:stringout");
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     while (std::chrono::steady_clock::now() < deadline) {
@@ -88,16 +88,16 @@ TEST_F(SoftIocPVAFixture, pva_BindAllRecords) {
 }
 
 TEST_F(SoftIocPVAFixture, pva_MonitorCustomStructure) {
-    ezec::Context ctx("pva");
-    ctx.connect("ezec:test:Position");
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:Position");
 
     double x = 0.0;
     double y = 0.0;
     double z = 0.0;
 
-    ctx.bind(x, "ezec:test:Position", "X.value");
-    ctx.bind(y, "ezec:test:Position", "Y.value");
-    ctx.bind(z, "ezec:test:Position", "Z.value");
+    ctx.bind(x, "pace:test:Position", "X.value");
+    ctx.bind(y, "pace:test:Position", "Y.value");
+    ctx.bind(z, "pace:test:Position", "Z.value");
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     while (std::chrono::steady_clock::now() < deadline) {

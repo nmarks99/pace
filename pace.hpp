@@ -6,6 +6,7 @@
 #include <mutex>
 #include <optional>
 #include <sstream>
+#include <thread>
 #include <string>
 #include <unordered_map>
 #include <variant>
@@ -14,7 +15,7 @@
 #include "cadef.h"
 #include <pvxs/client.h>
 
-namespace ezec {
+namespace pace {
 
 namespace detail {
 
@@ -143,6 +144,11 @@ struct MonitorSlot : MonitorSlotBase {
 class ChannelBase {
   public:
     ChannelBase(const std::string& pv_name) : pv_name_(pv_name) {}
+
+    // Delete copy constructor and move assignment operator
+    ChannelBase(const ChannelBase&) = delete;
+    ChannelBase& operator=(const ChannelBase&) = delete;
+
     virtual ~ChannelBase() = default;
 
     /// \brief Returns true if the channel is currently connected to the PV.
@@ -162,6 +168,14 @@ class ChannelBase {
     bool put(const T& value) {
         return put_var(detail::ValueVariant(value));
     }
+
+    /// \brief Shorthand for put(). Writes a value to the PV.
+    template <typename T>
+    void operator=(const T& value) {
+        put_var(detail::ValueVariant(value));
+    }
+    /// \overload
+    void operator=(const char* value) { put_var(detail::ValueVariant(std::string(value))); }
 
     /// \brief Write a string literal to the PV
     /// \overload
@@ -218,9 +232,7 @@ class ChannelBase {
     ///
     /// The PV must have been added to the context and connect first. After calling
     /// monitor(), use peek<T>() to read the latest value on demand.
-    void monitor() {
-        enable_monitor();
-    }
+    void monitor() { enable_monitor(); }
 
     /// \brief Copy the latest staged value to all bound variables.
     ///
@@ -277,7 +289,7 @@ class ChannelBase {
 /// \brief Channel Access implementation of ChannelBase.
 ///
 /// Connects to a single PV via the EPICS Channel Access protocol. A CA context
-/// (e.g. ezec::Context) must exist before construction. A monitor subscription
+/// (e.g. pace::Context) must exist before construction. A monitor subscription
 /// is created when bind() or monitor() is called. For floating-point PVs, the
 /// record's PREC field is fetched at monitor start time.
 ///
@@ -468,7 +480,6 @@ class CAChannel : public ChannelBase {
             value = static_cast<std::string>(data);
             break;
         }
-
         }
         return value;
     }
@@ -583,12 +594,9 @@ class PVAChannel : public ChannelBase {
     PVAChannel(pvxs::client::Context& context, const std::string& pv_name)
         : ChannelBase(pv_name), ctx_(context) {
         connection_ = ctx_.connect(pv_name)
-            .onConnect([this]{
-                this->connected_.store(true, std::memory_order_relaxed);
-            })
-            .onDisconnect([this]{
-                this->connected_.store(false, std::memory_order_relaxed);
-            }).exec();
+                          .onConnect([this] { this->connected_.store(true, std::memory_order_relaxed); })
+                          .onDisconnect([this] { this->connected_.store(false, std::memory_order_relaxed); })
+                          .exec();
     }
 
     ~PVAChannel() {
@@ -623,8 +631,6 @@ class PVAChannel : public ChannelBase {
         }
 
         subscription_ = ctx_.monitor(pv_name_)
-                            .maskConnected(true)
-                            .maskDisconnected(true)
                             .event([this](pvxs::client::Subscription& sub) {
                                 try {
                                     while (auto update = sub.pop()) {
@@ -666,11 +672,8 @@ class PVAChannel : public ChannelBase {
                                         new_data_.store(true, std::memory_order_release);
                                     }
                                 } catch (pvxs::client::Connected&) {
-                                    connected_.store(true, std::memory_order_relaxed);
                                 } catch (pvxs::client::Finished&) {
-                                    connected_.store(false, std::memory_order_relaxed);
                                 } catch (pvxs::client::Disconnect&) {
-                                    connected_.store(false, std::memory_order_relaxed);
                                 }
                             })
                             .exec();
@@ -725,7 +728,6 @@ class PVAChannel : public ChannelBase {
             return {};
         }
     }
-
 };
 
 /// \brief Manages a collection of PV channels with a single sync() call.
@@ -737,7 +739,7 @@ class PVAChannel : public ChannelBase {
 ///
 /// Example usage:
 /// \code
-///     ezec::Context ctxt;
+///     pace::Context ctxt;
 ///     ctxt.add("MyIOC:", {"m1.RBV", "m1.DMOV"});
 ///
 ///     double position = 0.0;
@@ -774,6 +776,11 @@ class Context {
         }
     }
 
+    // Delete copy constructor and move assignment operator
+    Context(const Context&) = delete;
+    Context& operator=(const Context&) = delete;
+
+    /// \brief Returns true if all PVs in the context are connected, otherwise false.
     bool all_connected() const {
         for (auto& [_, pv] : channel_map_) {
             if (!pv->connected()) {
@@ -783,18 +790,15 @@ class Context {
         return true;
     }
 
-    // TODO:
-    // Context(const Context&) = delete;
-    // Context& operator=(const Context&) = delete;
-
     /// \brief Bind a local variable to a PV.
     ///
-    /// The PV must have been added with add() first. The bound variable must
-    /// outlive the Context. Multiple variables (including different types) can
-    /// be bound to the same PV. Also starts the monitor if not already running.
+    /// The PV must have been added with connect() first. The bound variable
+    /// must outlive the Context. Multiple variables (including different types)
+    /// can be bound to the same PV. Also starts the monitor if not already
+    /// running.
     ///
     /// \param var  Reference to the local variable.
-    /// \param pv_name  The PV name, must match a previous add() call.
+    /// \param pv_name  The PV name, must match a previous connect() call.
     /// \param field_path  Field path for PVA structured PVs (default: "value").
     template <typename T>
     void bind(T& var, const std::string& pv_name, const std::string& field_path = "value") {
@@ -840,10 +844,10 @@ class Context {
 
     /// \brief Write a value to a PV (fire-and-forget).
     ///
-    /// The PV must have been added with add() first.
+    /// The PV must have been added with connect() first.
     /// Returns true if the value was sent, false if disconnected.
     ///
-    /// \param pv_name  The PV name, must match a previous add() call.
+    /// \param pv_name  The PV name, must match a previous connect() call.
     /// \param value    The value to write.
     template <typename T>
     bool put(const std::string& pv_name, const T& value) {
@@ -870,9 +874,7 @@ class Context {
     /// \brief Starts a monitor for the given PV
     ///
     /// \param pv_name The PV name (e.g. "MyIOC:name.VAL").
-    void monitor(const std::string& pv_name) {
-        get_channel(pv_name).monitor();
-    }
+    void monitor(const std::string& pv_name) { get_channel(pv_name).monitor(); }
 
     /// \brief Returns the latest value from the monitor as the request type.
     ///
@@ -916,11 +918,12 @@ class Context {
     /// \param pv_names List of PV names, possibly with protocol.
     /// \param timeout Optional connection timeout. If 0, returns immediately
     /// and doesn't wait for connection
-    void connect(const std::string& prefix, std::initializer_list<std::string> pv_names, double timeout = 0.0) {
+    void connect(const std::string& prefix, std::initializer_list<std::string> pv_names,
+                 double timeout = 0.0) {
         for (const std::string& pv_name : pv_names) {
             auto [pv_name_strip, protocol] = parse_protocol_pv_name(pv_name);
             emplace_pv_in_channel_map(protocol, prefix + pv_name_strip);
-            wait_connection(pv_name_strip, timeout);
+            wait_connection(prefix + pv_name_strip, timeout);
         }
     }
 
@@ -939,17 +942,16 @@ class Context {
         }
         const auto start = std::chrono::steady_clock::now();
         while (true) {
-            const long timeout_ms = timeout*1000.0;
+            const long timeout_ms = timeout * 1000.0;
             const auto now = std::chrono::steady_clock::now();
             const auto elap = std::chrono::duration_cast<std::chrono::milliseconds>(now - start);
             if (elap.count() > timeout_ms) {
                 throw std::runtime_error("Timed out waiting to connect to " + pv_name);
-                break;
             }
             if (get_channel(pv_name).connected()) {
-                printf("Connected to %s after %ld ms\n", pv_name.c_str(), elap.count());
                 break;
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
 
@@ -990,4 +992,4 @@ class Context {
     }
 };
 
-} // namespace ezec
+} // namespace pace

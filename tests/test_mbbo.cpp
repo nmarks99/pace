@@ -1,8 +1,8 @@
 #include "test_helpers.hpp"
 
 TEST_F(SoftIocFixture, mbbo_BindInt) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:mbbo.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:mbbo.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -22,8 +22,8 @@ TEST_F(SoftIocFixture, mbbo_BindInt) {
 }
 
 TEST_F(SoftIocFixture, mbbo_BindDouble) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:mbbo.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:mbbo.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
@@ -41,8 +41,8 @@ TEST_F(SoftIocFixture, mbbo_BindDouble) {
 }
 
 TEST_F(SoftIocFixture, mbbo_BindString) {
-    ezec::Context ctxt;
-    ezec::CAChannel channel("ezec:test:mbbo.VAL");
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:mbbo.VAL");
 
     wait_connect(channel);
     ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";

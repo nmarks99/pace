@@ -1,1 +1,2 @@
-# Easy EPICS Client
+# PACE
+**P**rotocol **A**gnostic **C**lient for **E**PICS

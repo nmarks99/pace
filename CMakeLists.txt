@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(ezec LANGUAGES CXX)
+project(pace LANGUAGES CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 17)
@@ -63,11 +63,11 @@ find_library(PVXS_pvxs pvxs
 set(PVXS_INCLUDES "${PVXS}/include")
 # ------------------------------------------------------------------------------
 
-# --- ezec header-only library -------------------------------------------------
-add_library(ezec INTERFACE)
-target_include_directories(ezec INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
-target_include_directories(ezec SYSTEM INTERFACE ${EPICS_BASE_INCLUDES} ${PVXS_INCLUDES})
-target_link_libraries(ezec INTERFACE ${EPICS_ca} ${EPICS_Com} ${PVXS_pvxs})
+# --- pace header-only library -------------------------------------------------
+add_library(pace INTERFACE)
+target_include_directories(pace INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(pace SYSTEM INTERFACE ${EPICS_BASE_INCLUDES} ${PVXS_INCLUDES})
+target_link_libraries(pace INTERFACE ${EPICS_ca} ${EPICS_Com} ${PVXS_pvxs})
 # ------------------------------------------------------------------------------
 
 # --- Tests --------------------------------------------------------------------
