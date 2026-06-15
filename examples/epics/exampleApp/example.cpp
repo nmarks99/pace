@@ -15,26 +15,25 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, signal_handler);
 
     // IOC prefix
-    std::string P = "nmarks:";
+    std::string P = "nick:";
 
     pace::Context ctxt("pva");
-    // ctxt.connect("pva://"+P+"Position", 1.0);
+    ctxt.connect("pva://"+P+"Position", 1.0);
     // ctxt.connect(P+"m1.RBV", 1.0);
     // ctxt.connect(P+"m1.DESC", 1.0);
     // ctxt.connect(P+"m1.VAL", 1.0);
-    ctxt.connect(P+"m1.SPMG", 1.0);
+    // ctxt.connect(P+"m1.DESC", 1.0);
 
-    std::cout << "Trying get operations\n";
+    if (auto x = ctxt.get<double>(P+"Position", "X.value")) {
+        std::cout << "X = " << *x << std::endl;
+    }
 
-    if (auto spmg = ctxt.get<pace::Enum>(P+"m1.SPMG")) {
-        std::cout << "spmg[choice] = " << spmg->choice << std::endl;
-        std::cout << "spmg[value] = " << spmg->index << std::endl;
-    }
-    if (auto spmg = ctxt.get<int>(P+"m1.SPMG")) {
-        std::cout << "spmg = " << spmg.value() << std::endl;
-    }
-    if (auto spmg = ctxt.get<std::string>(P+"m1.SPMG")) {
-        std::cout << "spmg = " << spmg.value() << std::endl;
+    bool success = ctxt.put(P+"Position", 123.45, "X.value");
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    std::cout << (success ? "Success" : "Fail") << "\n";
+
+    if (auto x = ctxt.get<double>(P+"Position", "X.value")) {
+        std::cout << "X = " << *x << std::endl;
     }
 
     // if (auto rbv = ctxt.get<double>(P+"m1.RBV")) {

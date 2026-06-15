@@ -187,21 +187,25 @@ class ChannelBase {
     /// \return true if the put was sent, false if the channel is disconnected
     /// or the value is not convertible to a supported type.
     template <typename T>
-    bool put(const T& value) {
-        return put_var(detail::ValueVariant(value));
+    bool put(const T& value, const std::string& field_path = "value") {
+        return put_var(detail::ValueVariant(value), field_path);
     }
 
-    /// \brief Shorthand for put(). Writes a value to the PV.
-    template <typename T>
-    void operator=(const T& value) {
-        put_var(detail::ValueVariant(value));
-    }
-    /// \overload
-    void operator=(const char* value) { put_var(detail::ValueVariant(std::string(value))); }
+    // /// \brief Shorthand for put(). Writes a value to the PV.
+    // template <typename T>
+    // void operator=(const T& value) {
+        // put_var(detail::ValueVariant(value), field_path);
+    // }
+    // /// \overload
+    // void operator=(const char* value) {
+        // put_var(detail::ValueVariant(std::string(value)));
+    // }
 
     /// \brief Write a string literal to the PV
     /// \overload
-    bool put(const char* value) { return put_var(detail::ValueVariant(std::string(value))); }
+    bool put(const char* value, const std::string& field_path = "value") {
+        return put_var(detail::ValueVariant(std::string(value)), field_path);
+    }
 
     /// \brief Synchronous get. Fetches the current value from the IOC.
     ///
@@ -292,7 +296,7 @@ class ChannelBase {
 
   protected:
     /// \brief CA/PVA specific put implementation.
-    virtual bool put_var(const detail::ValueVariant& value) = 0;
+    virtual bool put_var(const detail::ValueVariant& value, const std::string& field_path) = 0;
 
     /// \brief CA/PVA specific get implementation.
     virtual detail::ValueVariant get_var(const std::string& field_path, double timeout) = 0;
@@ -359,7 +363,7 @@ class CAChannel : public ChannelBase {
     evid evt_id_ = nullptr;
 
     /// \brief CA-specific put implementation. Sends the value via ca_put + ca_flush_io.
-    bool put_var(const detail::ValueVariant& value) override {
+    bool put_var(const detail::ValueVariant& value, const std::string& field_path = "value") override {
         if (!connected()) {
             return false;
         }
@@ -681,6 +685,7 @@ class PVAChannel : public ChannelBase {
     std::atomic<bool> wants_monitor_{false};
     std::shared_ptr<pvxs::client::Subscription> subscription_;
     std::shared_ptr<pvxs::client::Connect> connection_;
+    std::shared_ptr<pvxs::client::Operation> put_operation_;
     pvxs::client::Context& ctx_;
 
     void start_monitor() {
@@ -763,7 +768,27 @@ class PVAChannel : public ChannelBase {
     }
 
     /// \brief PVA-specific put implementation. Not yet implemented.
-    bool put_var(const detail::ValueVariant& value) override { return false; }
+    bool put_var(const detail::ValueVariant& value, const std::string& field_path = "value") override {
+        if (!connected()) {
+            return false;
+        }
+        pvxs::client::PutBuilder put_builder;
+        if (auto* v = std::get_if<double>(&value)) {
+            put_builder = ctx_.put(pv_name_).set(field_path, static_cast<double>(*v));
+        } else if (auto* v = std::get_if<int>(&value)) {
+            put_builder = ctx_.put(pv_name_).set(field_path, static_cast<int>(*v));
+        } else if (auto* v = std::get_if<Enum>(&value)) {
+            put_builder = ctx_.put(pv_name_).set("value.index", static_cast<int>(v->index));
+        } else if (auto* v = std::get_if<std::string>(&value)) {
+            put_builder = ctx_.put(pv_name_).set(field_path, static_cast<std::string>(*v));
+        }
+        else {
+            // unsupported type
+            return false;
+        }
+        put_operation_ = put_builder.exec();
+        return true;
+    }
 
     /// \brief PVA-specific get implementation. Fetches the value via pvxs::client::Context::get.
     detail::ValueVariant get_var(const std::string& field_path, double timeout) override {
@@ -950,8 +975,8 @@ class Context {
     /// \param pv_name  The PV name, must match a previous connect() call.
     /// \param value    The value to write.
     template <typename T>
-    bool put(const std::string& pv_name, const T& value) {
-        return get_channel(pv_name).put(value);
+    bool put(const std::string& pv_name, const T& value, const std::string& field_path = "value") {
+        return get_channel(pv_name).put(value, field_path);
     }
 
     /// \brief Synchronous get.
