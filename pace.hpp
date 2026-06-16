@@ -191,16 +191,6 @@ class ChannelBase {
         return put_var(detail::ValueVariant(value), field_path);
     }
 
-    // /// \brief Shorthand for put(). Writes a value to the PV.
-    // template <typename T>
-    // void operator=(const T& value) {
-        // put_var(detail::ValueVariant(value), field_path);
-    // }
-    // /// \overload
-    // void operator=(const char* value) {
-        // put_var(detail::ValueVariant(std::string(value)));
-    // }
-
     /// \brief Write a string literal to the PV
     /// \overload
     bool put(const char* value, const std::string& field_path = "value") {
@@ -767,7 +757,8 @@ class PVAChannel : public ChannelBase {
                 .exec();
     }
 
-    /// \brief PVA-specific put implementation. Not yet implemented.
+    /// \brief PVA-specific put implementation.
+    /// TODO: document more
     bool put_var(const detail::ValueVariant& value, const std::string& field_path = "value") override {
         if (!connected()) {
             return false;
