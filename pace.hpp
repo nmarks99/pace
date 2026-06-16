@@ -353,7 +353,7 @@ class CAChannel : public ChannelBase {
     evid evt_id_ = nullptr;
 
     /// \brief CA-specific put implementation. Sends the value via ca_put + ca_flush_io.
-    bool put_var(const detail::ValueVariant& value, const std::string& field_path = "value") override {
+    bool put_var(const detail::ValueVariant& value, const std::string&) override {
         if (!connected()) {
             return false;
         }
@@ -442,7 +442,7 @@ class CAChannel : public ChannelBase {
     }
 
     /// \brief CA-specific get implementation. Fetches the value via ca_get + ca_pend_io.
-    detail::ValueVariant get_var(const std::string& field_path, double timeout) override {
+    detail::ValueVariant get_var(const std::string&, double timeout) override {
         if (!connected()) {
             return {};
         }
