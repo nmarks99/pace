@@ -20,7 +20,7 @@ namespace pace {
 struct Enum {
     std::vector<std::string> choices;
     std::string choice;
-    int index;
+    int index = 0;
 };
 
 namespace detail {
@@ -167,7 +167,7 @@ class ChannelBase {
   public:
     ChannelBase(const std::string& pv_name) : pv_name_(pv_name) {}
 
-    // Delete copy constructor and move assignment operator
+    // Delete copy constructor and copy assignment operator
     ChannelBase(const ChannelBase&) = delete;
     ChannelBase& operator=(const ChannelBase&) = delete;
 
@@ -503,6 +503,7 @@ class CAChannel : public ChannelBase {
             if (ca_pend_io(timeout) != ECA_NORMAL) {
                 return {};
             }
+            std::lock_guard lock(mutex_);
             if (metadata_.enum_choices.empty()) {
                 for (int i = 0; i < data.no_str; i++) {
                     metadata_.enum_choices.emplace_back(data.strs[i]);
@@ -757,9 +758,13 @@ class PVAChannel : public ChannelBase {
                 .exec();
     }
 
-    /// \brief PVA-specific put implementation.
-    /// TODO: document more
-    bool put_var(const detail::ValueVariant& value, const std::string& field_path = "value") override {
+    /// \brief PVA-specific put implementation. Sends the value via pvxs::client::Context::put.
+    ///
+    /// The put is fire-and-forget: the returned Operation is stored in
+    /// put_operation_ to keep it alive until it completes or is replaced
+    /// by the next put. For Enum values, the index is written to
+    /// "value.index" regardless of field_path.
+    bool put_var(const detail::ValueVariant& value, const std::string& field_path) override {
         if (!connected()) {
             return false;
         }
@@ -797,7 +802,7 @@ class PVAChannel : public ChannelBase {
                     auto choices_field = val["choices"];
                     if (idx_field && choices_field) {
                         Enum e;
-                        e.index = idx_field.as<int>();
+                        e.index = idx_field.as<int32_t>();
                         auto arr = choices_field.as<pvxs::shared_array<const std::string>>();
                         for (auto& s : arr) {
                             e.choices.emplace_back(s);
@@ -850,13 +855,13 @@ class PVAChannel : public ChannelBase {
 ///
 /// Context is the primary interface for monitoring multiple PVs. It supports
 /// both CA and PVA protocols (including mixed usage via protocol prefixes).
-/// Add PVs with add(), bind local variables with bind(), then call sync()
+/// Add PVs to the context with connect(), bind local variables with bind(), then call sync()
 /// periodically to update all bound variables at once.
 ///
 /// Example usage:
 /// \code
 ///     pace::Context ctxt;
-///     ctxt.add("MyIOC:", {"m1.RBV", "m1.DMOV"});
+///     ctxt.connect("MyIOC:", {"m1.RBV", "m1.DMOV"});
 ///
 ///     double position = 0.0;
 ///     int done = 0;
@@ -886,13 +891,12 @@ class Context {
     }
 
     ~Context() {
-        channel_map_.clear();
-        if (ca_current_context()) {
+        if (ca_initialized_) {
             ca_context_destroy();
         }
     }
 
-    // Delete copy constructor and move assignment operator
+    // Delete copy constructor and copy assignment operator
     Context(const Context&) = delete;
     Context& operator=(const Context&) = delete;
 
@@ -1048,8 +1052,8 @@ class Context {
     const std::string default_protocol_ = "ca";
     bool ca_initialized_ = false;
     bool pva_initialized_ = false;
-    std::unordered_map<std::string, std::unique_ptr<ChannelBase>> channel_map_;
     std::optional<pvxs::client::Context> pvxs_ctxt_;
+    std::unordered_map<std::string, std::unique_ptr<ChannelBase>> channel_map_;
 
     /// \brief Waits for the given PV to connect before returning. Throws on timeout.
     void wait_connection(const std::string& pv_name, double timeout) {
