@@ -11,6 +11,12 @@ record(stringout, "pace:test:stringout") {
     field(VAL, "Hello World")
 }
 
+record(bo, "pace:test:bo") {
+    field(VAL, 0)
+    field(ZNAM, "OFF")
+    field(ONAM, "ON")
+}
+
 record(mbbo, "pace:test:mbbo") {
     field(ZRVL, 0)
     field(ONVL, 1)
