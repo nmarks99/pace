@@ -891,6 +891,7 @@ class Context {
     }
 
     ~Context() {
+        channel_map_.clear();
         if (ca_initialized_) {
             ca_context_destroy();
         }
