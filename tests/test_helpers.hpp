@@ -52,37 +52,6 @@ class SoftIocFixture : public ::testing::Test {
     }
 };
 
-inline void wait_connect(pace::CAChannel& channel, int timeout_sec = 5) {
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
-    while (!channel.connected() && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(50ms);
-    }
-}
-
-inline bool wait_sync(pace::CAChannel& channel, int timeout_sec = 5) {
-    bool new_data = false;
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
-    while (!new_data && std::chrono::steady_clock::now() < deadline) {
-        new_data = channel.sync();
-        if (!new_data) {
-            std::this_thread::sleep_for(50ms);
-        }
-    }
-    return new_data;
-}
-
-inline bool wait_context_sync(pace::Context& ctx, int timeout_sec = 5) {
-    bool new_data = false;
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
-    while (!new_data && std::chrono::steady_clock::now() < deadline) {
-        new_data = ctx.sync();
-        if (!new_data) {
-            std::this_thread::sleep_for(50ms);
-        }
-    }
-    return new_data;
-}
-
 class SoftIocPVAFixture : public ::testing::Test {
   protected:
     pid_t ioc_pid_ = -1;
@@ -115,3 +84,41 @@ class SoftIocPVAFixture : public ::testing::Test {
         }
     }
 };
+
+inline void wait_connect(pace::ChannelBase& channel, int timeout_sec = 5) {
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
+    while (!channel.connected() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(50ms);
+    }
+}
+
+inline void wait_all_connected(pace::Context& ctxt, int timeout_sec = 5) {
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
+    while (!ctxt.all_connected() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(50ms);
+    }
+}
+
+inline bool wait_sync(pace::ChannelBase& channel, int timeout_sec = 5) {
+    bool new_data = false;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
+    while (!new_data && std::chrono::steady_clock::now() < deadline) {
+        new_data = channel.sync();
+        if (!new_data) {
+            std::this_thread::sleep_for(50ms);
+        }
+    }
+    return new_data;
+}
+
+inline bool wait_context_sync(pace::Context& ctx, int timeout_sec = 5) {
+    bool new_data = false;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
+    while (!new_data && std::chrono::steady_clock::now() < deadline) {
+        new_data = ctx.sync();
+        if (!new_data) {
+            std::this_thread::sleep_for(50ms);
+        }
+    }
+    return new_data;
+}
