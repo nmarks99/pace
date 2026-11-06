@@ -129,7 +129,16 @@ struct MonitorSlot : MonitorSlotBase {
     void copy_to_targets(const ValueVariant& staged, int precision,
                          pvxs::Value* pvxs_value = nullptr) override {
         for (auto& target : targets) {
-            if (pvxs_value && std::holds_alternative<std::monostate>(staged)) {
+            if constexpr (std::is_same_v<T, pvxs::Value>) {
+                if (!pvxs_value) {
+                    continue;
+                }
+                if (target.field_path.empty()) {
+                    *target.pvalue = pvxs_value->clone();
+                } else if (auto field = (*pvxs_value)[target.field_path]) {
+                    *target.pvalue = field.clone();
+                }
+            } else if (pvxs_value && std::holds_alternative<std::monostate>(staged)) {
                 pvxs::Value field = (*pvxs_value)[target.field_path];
                 try {
                     if constexpr (std::is_same_v<T, std::vector<double>>) {
@@ -224,6 +233,10 @@ class ChannelBase {
     ///
     /// \param var Reference to the user's variable. A raw pointer to this
     ///            variable is stored internally.
+    void bind(pvxs::Value& var, const std::string& field_path = "") {
+        bind<pvxs::Value>(var, field_path);
+    }
+
     template <typename T>
     void bind(T& var, const std::string& field_path = "value") {
         std::lock_guard lock(mutex_);
@@ -920,7 +933,13 @@ class Context {
     ///
     /// \param var  Reference to the local variable.
     /// \param pv_name  The PV name, must match a previous connect() call.
-    /// \param field_path  Field path for PVA structured PVs (default: "value").
+    /// \param field_path  Field path for PVA structured PVs. Defaults to the root for
+    ///                    pvxs::Value and "value" for other types.
+    void bind(pvxs::Value& var, const std::string& pv_name, const std::string& field_path = "") {
+        auto [pv_name_strip, _] = parse_protocol_pv_name(pv_name);
+        get_channel(pv_name_strip).bind<pvxs::Value>(var, field_path);
+    }
+
     template <typename T>
     void bind(T& var, const std::string& pv_name, const std::string& field_path = "value") {
         auto [pv_name_strip, _] = parse_protocol_pv_name(pv_name);

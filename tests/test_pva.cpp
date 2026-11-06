@@ -87,6 +87,24 @@ TEST_F(SoftIocPVAFixture, pva_BindAllRecords) {
     EXPECT_EQ(stringout_val, "Hello World");
 }
 
+TEST_F(SoftIocPVAFixture, pva_BindRawValue) {
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:Position");
+
+    pvxs::Value root;
+    pvxs::Value x;
+    ctx.bind(root, "pace:test:Position");
+    ctx.bind(x, "pace:test:Position", "X");
+
+    ASSERT_TRUE(wait_context_sync(ctx)) << "No monitor update received within timeout";
+    ASSERT_TRUE(root);
+    ASSERT_TRUE(x);
+    EXPECT_DOUBLE_EQ(root["X.value"].as<double>(), 1.11);
+    EXPECT_DOUBLE_EQ(root["Y.value"].as<double>(), 2.22);
+    EXPECT_DOUBLE_EQ(root["Z.value"].as<double>(), 3.33);
+    EXPECT_DOUBLE_EQ(x["value"].as<double>(), 1.11);
+}
+
 TEST_F(SoftIocPVAFixture, pva_MonitorCustomStructure) {
     pace::Context ctx("pva");
     ctx.connect("pace:test:Position");
