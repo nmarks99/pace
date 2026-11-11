@@ -702,6 +702,8 @@ class PVAChannel : public ChannelBase {
 
         subscription_ =
             ctx_.monitor(pv_name_)
+                .maskConnected(true)
+                .maskDisconnected(true)
                 .event([this](pvxs::client::Subscription& sub) {
                     try {
                         while (auto update = sub.pop()) {

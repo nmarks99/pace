@@ -105,6 +105,34 @@ TEST_F(SoftIocPVAFixture, pva_BindRawValue) {
     EXPECT_DOUBLE_EQ(x["value"].as<double>(), 1.11);
 }
 
+TEST_F(SoftIocPVAFixture, pva_MonitorReconnectsAfterIocRestart) {
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:ao");
+
+    double value = 0.0;
+    ctx.bind(value, "pace:test:ao");
+
+    ASSERT_TRUE(wait_context_sync(ctx)) << "No initial monitor update received";
+    EXPECT_DOUBLE_EQ(value, 3.14);
+
+    ASSERT_TRUE(ctx.put("pace:test:ao", 6.28));
+    ASSERT_TRUE(wait_context_sync(ctx)) << "No monitor update received after put";
+    EXPECT_DOUBLE_EQ(value, 6.28);
+
+    stop_ioc();
+    auto disconnect_deadline = std::chrono::steady_clock::now() + 5s;
+    while (ctx.all_connected() && std::chrono::steady_clock::now() < disconnect_deadline) {
+        std::this_thread::sleep_for(50ms);
+    }
+    ASSERT_FALSE(ctx.all_connected()) << "PVA channel did not disconnect";
+
+    start_ioc();
+    wait_all_connected(ctx, 10);
+    ASSERT_TRUE(ctx.all_connected()) << "PVA channel did not reconnect";
+    ASSERT_TRUE(wait_context_sync(ctx, 10)) << "No monitor update received after IOC restart";
+    EXPECT_DOUBLE_EQ(value, 3.14);
+}
+
 TEST_F(SoftIocPVAFixture, pva_MonitorCustomStructure) {
     pace::Context ctx("pva");
     ctx.connect("pace:test:Position");

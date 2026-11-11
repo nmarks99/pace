@@ -56,7 +56,7 @@ class SoftIocPVAFixture : public ::testing::Test {
   protected:
     pid_t ioc_pid_ = -1;
 
-    void SetUp() override {
+    void start_ioc() {
         std::string softIoc = std::string(EPICS_BASE) + "/bin/" + EPICS_HOST_ARCH + "/softIocPVA";
         std::string db = std::string(TEST_DB_DIR) + "/test.db";
 
@@ -76,13 +76,18 @@ class SoftIocPVAFixture : public ::testing::Test {
         std::this_thread::sleep_for(3s);
     }
 
-    void TearDown() override {
+    void stop_ioc() {
         if (ioc_pid_ > 0) {
             kill(ioc_pid_, SIGTERM);
             int status;
             waitpid(ioc_pid_, &status, 0);
+            ioc_pid_ = -1;
         }
     }
+
+    void SetUp() override { start_ioc(); }
+
+    void TearDown() override { stop_ioc(); }
 };
 
 inline void wait_connect(pace::ChannelBase& channel, int timeout_sec = 5) {
