@@ -158,3 +158,27 @@ TEST_F(SoftIocPVAFixture, pva_MonitorCustomStructure) {
     EXPECT_DOUBLE_EQ(y, 2.22);
     EXPECT_DOUBLE_EQ(z, 3.33);
 }
+
+TEST_F(SoftIocPVAFixture, pva_BindVectorDouble) {
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:wfdouble");
+
+    std::vector<double> val;
+    ctx.bind(val, "pace:test:wfdouble");
+
+    ASSERT_TRUE(wait_context_sync(ctx)) << "No monitor update received within timeout";
+    std::vector<double> truth = {1.11, 2.22, 3.33};
+    EXPECT_EQ(val, truth);
+}
+
+TEST_F(SoftIocPVAFixture, pva_BindVectorInt) {
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:wflong");
+
+    std::vector<int> val;
+    ctx.bind(val, "pace:test:wflong");
+
+    ASSERT_TRUE(wait_context_sync(ctx)) << "No monitor update received within timeout";
+    std::vector<int> truth = {10, 20, 30};
+    EXPECT_EQ(val, truth);
+}

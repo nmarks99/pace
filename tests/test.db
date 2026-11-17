@@ -38,6 +38,12 @@ record(waveform, "pace:test:wfdouble") {
     field(NELM, 3)
 }
 
+record(waveform, "pace:test:wflong") {
+    field(FTVL, "LONG")
+    field(INP, "{const: [10,20,30]}")
+    field(NELM, 3)
+}
+
 record(ao, "pace:test:X") {
     field(PREC, 3)
     field(VAL, 1.11)

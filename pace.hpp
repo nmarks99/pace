@@ -758,6 +758,16 @@ class PVAChannel : public ChannelBase {
                                 case pvxs::TypeCode::String:
                                     value = pva_value_field.as<std::string>();
                                     break;
+                                case pvxs::TypeCode::Float64A: {
+                                    auto arr = pva_value_field.as<pvxs::shared_array<const double>>();
+                                    value = std::vector<double>(arr.begin(), arr.end());
+                                    break;
+                                }
+                                case pvxs::TypeCode::Int32A: {
+                                    auto arr = pva_value_field.as<pvxs::shared_array<const int32_t>>();
+                                    value = std::vector<int>(arr.begin(), arr.end());
+                                    break;
+                                }
                                 default:
                                     continue;
                                 }
