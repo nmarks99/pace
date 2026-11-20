@@ -71,3 +71,12 @@ record(ao, "pace:test:Z") {
         }
     })
 }
+
+record(ao, "pace:test:sink") {
+    field(FLNK, "pace:test:count")
+}
+
+record(calc, "pace:test:count") {
+    field(INPA, "pace:test:count NPP")
+    field(CALC, "A+1")
+}

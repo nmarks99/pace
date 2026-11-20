@@ -182,3 +182,59 @@ TEST_F(SoftIocPVAFixture, pva_BindVectorInt) {
     std::vector<int> truth = {10, 20, 30};
     EXPECT_EQ(val, truth);
 }
+
+static double wait_count(pace::Context& ctx, double expected, int timeout_sec = 5) {
+    double count = -1.0;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
+    while (std::chrono::steady_clock::now() < deadline) {
+        count = ctx.get<double>("pace:test:count").value_or(-1.0);
+        if (count >= expected) {
+            break;
+        }
+        std::this_thread::sleep_for(50ms);
+    }
+    return count;
+}
+
+TEST_F(SoftIocPVAFixture, pva_ManyPuts) {
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:sink", 5.0);
+    ctx.connect("pace:test:count", 5.0);
+
+    for (int i = 0; i < 100; i++) {
+        ASSERT_TRUE(ctx.put("pace:test:sink", static_cast<double>(i)));
+    }
+
+    EXPECT_DOUBLE_EQ(wait_count(ctx, 100.0), 100.0);
+}
+
+TEST_F(SoftIocPVAFixture, pva_PutBeforeDestroy) {
+    {
+        pace::Context ctx("pva");
+        ctx.connect("pace:test:sink", 5.0);
+        ASSERT_TRUE(ctx.put("pace:test:sink", 1.0));
+    }
+
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:count", 5.0);
+    EXPECT_DOUBLE_EQ(wait_count(ctx, 1.0, 2), 1.0);
+}
+
+TEST_F(SoftIocPVAFixture, pva_DestroyWithStalledPut) {
+    auto ctx = std::make_unique<pace::Context>("pva");
+    ctx->connect("pace:test:sink", 5.0);
+
+    kill(ioc_pid_, SIGSTOP);
+    int status;
+    waitpid(ioc_pid_, &status, WUNTRACED);
+
+    for (int i = 0; i < 10; i++) {
+        ctx->put("pace:test:sink", static_cast<double>(i));
+    }
+    auto start = std::chrono::steady_clock::now();
+    ctx.reset();
+    auto elapsed = std::chrono::steady_clock::now() - start;
+
+    kill(ioc_pid_, SIGCONT);
+    EXPECT_LT(elapsed, 2s);
+}

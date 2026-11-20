@@ -726,6 +726,7 @@ class PVAChannel : public ChannelBase {
     }
 
     ~PVAChannel() {
+        drain_puts(1.0);
         if (subscription_) {
             subscription_->cancel();
         }
@@ -746,8 +747,42 @@ class PVAChannel : public ChannelBase {
     std::atomic<bool> wants_monitor_{false};
     std::shared_ptr<pvxs::client::Subscription> subscription_;
     std::shared_ptr<pvxs::client::Connect> connection_;
-    std::shared_ptr<pvxs::client::Operation> put_operation_;
     pvxs::client::Context& ctx_;
+
+    std::mutex put_mtx_;
+    std::condition_variable put_cv_;
+    uint64_t put_seq_ = 0;
+    std::unordered_map<uint64_t, std::shared_ptr<pvxs::client::Operation>> puts_;
+    std::vector<std::shared_ptr<pvxs::client::Operation>> done_puts_;
+
+    /// \brief Result callback for puts. Runs on the PVXS worker.
+    ///
+    /// The Operation must not be destroyed here, so it is moved to done_puts_ and
+    /// released later on the user thread.
+    void put_done(uint64_t id) {
+        {
+            std::lock_guard lock(put_mtx_);
+            auto it = puts_.find(id);
+            if (it == puts_.end()) {
+                return;
+            }
+            done_puts_.push_back(std::move(it->second));
+            puts_.erase(it);
+        }
+        put_cv_.notify_all();
+    }
+
+    /// \brief Waits up to timeout seconds for in-flight puts, then cancels the rest.
+    void drain_puts(double timeout) {
+        std::unordered_map<uint64_t, std::shared_ptr<pvxs::client::Operation>> pending;
+        std::vector<std::shared_ptr<pvxs::client::Operation>> done;
+        {
+            std::unique_lock lock(put_mtx_);
+            put_cv_.wait_for(lock, std::chrono::duration<double>(timeout), [this] { return puts_.empty(); });
+            pending.swap(puts_);
+            done.swap(done_puts_);
+        }
+    }
 
     void start_monitor() {
         if (!wants_monitor_.load(std::memory_order_relaxed)) {
@@ -843,8 +878,8 @@ class PVAChannel : public ChannelBase {
     /// \brief PVA-specific put implementation. Sends the value via pvxs::client::Context::put.
     ///
     /// The put is fire-and-forget: the returned Operation is stored in
-    /// put_operation_ to keep it alive until it completes or is replaced
-    /// by the next put. For Enum values, the index is written to
+    /// puts_ to keep it alive until it completes. Releasing an Operation
+    /// early cancels the put. For Enum values, the index is written to
     /// "value.index" regardless of field_path.
     bool put_var(const detail::ValueVariant& value, const std::string& field_path) override {
         if (!connected()) {
@@ -864,7 +899,13 @@ class PVAChannel : public ChannelBase {
             // unsupported type
             return false;
         }
-        put_operation_ = put_builder.exec();
+        std::vector<std::shared_ptr<pvxs::client::Operation>> done;
+        {
+            std::lock_guard lock(put_mtx_);
+            done.swap(done_puts_);
+            uint64_t id = ++put_seq_;
+            puts_.emplace(id, put_builder.result([this, id](pvxs::client::Result&&) { put_done(id); }).exec());
+        }
         return true;
     }
 

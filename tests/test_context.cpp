@@ -322,3 +322,49 @@ TEST_F(SoftIocPVAFixture, context_MixedProtocol_PutViaCAThenReadViaPVA) {
     EXPECT_DOUBLE_EQ(ca_val, 99.5);
     EXPECT_DOUBLE_EQ(pva_val, 99.5);
 }
+
+TEST_F(SoftIocFixture, context_TwoContextsOneThread) {
+    auto a = std::make_unique<pace::Context>();
+    pace::Context b;
+
+    b.connect("pace:test:ao", 5.0);
+    a.reset();
+
+    EXPECT_TRUE(b.get_channel("pace:test:ao").connected());
+    auto result = b.get<double>("pace:test:ao");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_DOUBLE_EQ(*result, 3.14);
+}
+
+TEST_F(SoftIocFixture, context_AppOwnedCAContext) {
+    ASSERT_EQ(ca_context_create(ca_enable_preemptive_callback), ECA_NORMAL);
+    ca_client_context* app_ctx = ca_current_context();
+
+    chid id;
+    ASSERT_EQ(ca_create_channel("pace:test:ao", nullptr, nullptr, 0, &id), ECA_NORMAL);
+    ca_pend_io(5.0);
+    ASSERT_EQ(ca_state(id), cs_conn);
+
+    {
+        pace::Context ctx;
+        ctx.connect("pace:test:ao", 5.0);
+        EXPECT_TRUE(ctx.get<double>("pace:test:ao").has_value());
+    }
+
+    EXPECT_EQ(ca_current_context(), app_ctx);
+    EXPECT_EQ(ca_state(id), cs_conn);
+
+    dbr_double_t value = 0.0;
+    EXPECT_EQ(ca_get(DBR_DOUBLE, id, &value), ECA_NORMAL);
+    EXPECT_EQ(ca_pend_io(5.0), ECA_NORMAL);
+    EXPECT_DOUBLE_EQ(value, 3.14);
+
+    ca_clear_channel(id);
+    ca_context_destroy();
+}
+
+TEST_F(SoftIocFixture, context_NonPreemptiveAppContext) {
+    ASSERT_EQ(ca_context_create(ca_disable_preemptive_callback), ECA_NORMAL);
+    EXPECT_THROW(pace::Context ctx, std::runtime_error);
+    ca_context_destroy();
+}
