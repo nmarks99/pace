@@ -1,5 +1,7 @@
 #pragma once
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <iomanip>
 #include <memory>
@@ -365,6 +367,16 @@ class CAChannel : public ChannelBase {
     chid channel_id_;
     evid evt_id_ = nullptr;
 
+    struct GetRequest {
+        std::mutex mtx;
+        std::condition_variable cv;
+        bool done = false;
+        detail::ValueVariant value;
+    };
+
+    std::mutex pending_mtx_;
+    std::unordered_map<GetRequest*, std::shared_ptr<GetRequest>> pending_gets_;
+
     /// \brief CA-specific put implementation. Sends the value via ca_put + ca_flush_io.
     bool put_var(const detail::ValueVariant& value, const std::string&) override {
         if (!connected()) {
@@ -454,93 +466,91 @@ class CAChannel : public ChannelBase {
         }
     }
 
-    /// \brief CA-specific get implementation. Fetches the value via ca_get + ca_pend_io.
+    /// \brief CA-specific get implementation. Fetches the value via ca_array_get_callback.
+    ///
+    /// The reply is written to a heap-allocated GetRequest owned by pending_gets_, not to
+    /// the caller's stack, so a reply that arrives after the timeout is safe.
+    /// A timeout <= 0 waits forever, like ca_pend_io(0).
     detail::ValueVariant get_var(const std::string&, double timeout) override {
         if (!connected()) {
             return {};
         }
 
-        detail::ValueVariant value;
-        auto native = ca_field_type(channel_id_);
-        auto dbr = dbf_type_to_DBR(native);
+        chtype type = dbf_type_to_DBR(ca_field_type(channel_id_));
+        if (type < 0) {
+            return {};
+        }
+        if (type == DBR_ENUM) {
+            type = DBR_CTRL_ENUM;
+        }
 
-        switch (dbr) {
-        case DBR_DOUBLE: {
-            dbr_double_t data;
-            ca_get(DBR_DOUBLE, channel_id_, &data);
-            if (ca_pend_io(timeout) != ECA_NORMAL) {
-                return {};
-            }
-            value = static_cast<double>(data);
-            break;
+        auto req = std::make_shared<GetRequest>();
+        {
+            std::lock_guard lock(pending_mtx_);
+            pending_gets_.emplace(req.get(), req);
         }
-        case DBR_FLOAT: {
-            dbr_float_t data;
-            ca_get(DBR_FLOAT, channel_id_, &data);
-            if (ca_pend_io(timeout) != ECA_NORMAL) {
-                return {};
-            }
-            value = static_cast<double>(data);
-            break;
+        if (ca_array_get_callback(type, 1, channel_id_, get_callback, req.get()) != ECA_NORMAL) {
+            std::lock_guard lock(pending_mtx_);
+            pending_gets_.erase(req.get());
+            return {};
         }
-        case DBR_LONG: {
-            dbr_long_t data;
-            ca_get(DBR_LONG, channel_id_, &data);
-            if (ca_pend_io(timeout) != ECA_NORMAL) {
+        ca_flush_io();
+
+        std::unique_lock lock(req->mtx);
+        auto is_done = [&req] { return req->done; };
+        if (timeout > 0.0) {
+            if (!req->cv.wait_for(lock, std::chrono::duration<double>(timeout), is_done)) {
                 return {};
             }
-            value = static_cast<int>(data);
-            break;
+        } else {
+            req->cv.wait(lock, is_done);
         }
-        case DBR_SHORT: {
-            dbr_short_t data;
-            ca_get(DBR_SHORT, channel_id_, &data);
-            if (ca_pend_io(timeout) != ECA_NORMAL) {
-                return {};
+        return std::move(req->value);
+    }
+
+    /// \brief Completion callback for get_var. Runs on the CA thread.
+    ///
+    /// Also called with ECA_DISCONN if the channel disconnects. Not called after
+    /// ca_clear_channel returns.
+    static void get_callback(struct event_handler_args evt) {
+        auto* self = static_cast<CAChannel*>(ca_puser(evt.chid));
+        std::shared_ptr<GetRequest> req;
+        {
+            std::lock_guard lock(self->pending_mtx_);
+            auto it = self->pending_gets_.find(static_cast<GetRequest*>(evt.usr));
+            if (it == self->pending_gets_.end()) {
+                return;
             }
-            value = static_cast<int>(data);
-            break;
+            req = std::move(it->second);
+            self->pending_gets_.erase(it);
         }
-        case DBR_CHAR: {
-            dbr_char_t data;
-            ca_get(DBR_CHAR, channel_id_, &data);
-            if (ca_pend_io(timeout) != ECA_NORMAL) {
-                return {};
-            }
-            value = static_cast<int>(data);
-            break;
-        }
-        case DBR_ENUM: {
-            struct dbr_ctrl_enum data;
-            ca_get(DBR_CTRL_ENUM, channel_id_, &data);
-            if (ca_pend_io(timeout) != ECA_NORMAL) {
-                return {};
-            }
-            std::lock_guard lock(mutex_);
-            if (metadata_.enum_choices.empty()) {
-                for (int i = 0; i < data.no_str; i++) {
-                    metadata_.enum_choices.emplace_back(data.strs[i]);
+
+        detail::ValueVariant value;
+        if (evt.status == ECA_NORMAL && evt.dbr) {
+            if (evt.type == DBR_CTRL_ENUM) {
+                auto* data = static_cast<const struct dbr_ctrl_enum*>(evt.dbr);
+                std::lock_guard lock(self->mutex_);
+                if (self->metadata_.enum_choices.empty()) {
+                    for (int i = 0; i < data->no_str; i++) {
+                        self->metadata_.enum_choices.emplace_back(data->strs[i]);
+                    }
                 }
+                Enum e;
+                e.choices = self->metadata_.enum_choices;
+                e.index = static_cast<int>(data->value);
+                e.choice = (data->value < e.choices.size()) ? e.choices[data->value] : std::string();
+                value = std::move(e);
+            } else {
+                value = get_scalar_event(evt);
             }
-            Enum e;
-            e.choices = metadata_.enum_choices;
-            e.index = static_cast<int>(data.value);
-            e.choice = (data.value < metadata_.enum_choices.size()) ? metadata_.enum_choices[data.value]
-                                                                    : std::string();
-            value = std::move(e);
-            break;
         }
-        case DBR_STRING: {
-            dbr_string_t data;
-            ca_get(DBR_STRING, channel_id_, &data);
-            if (ca_pend_io(timeout) != ECA_NORMAL) {
-                return {};
-            }
-            value = static_cast<std::string>(data);
-            break;
+
+        {
+            std::lock_guard lock(req->mtx);
+            req->value = std::move(value);
+            req->done = true;
         }
-        }
-        return value;
+        req->cv.notify_one();
     }
 
     /// \brief Extracts a scalar value from a CA subscription event.

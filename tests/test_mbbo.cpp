@@ -174,3 +174,76 @@ TEST_F(SoftIocFixture, mbbo_PutEnum) {
     EXPECT_EQ(result->index, 2);
     EXPECT_EQ(result->choice, "Two");
 }
+
+static void pause_ioc(pid_t pid) {
+    kill(pid, SIGSTOP);
+    int status;
+    waitpid(pid, &status, WUNTRACED);
+}
+
+TEST_F(SoftIocFixture, mbbo_GetLateReply) {
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:mbbo.VAL");
+
+    wait_connect(channel);
+    ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
+
+    pause_ioc(ioc_pid_);
+    auto result = channel.get<pace::Enum>(0.5);
+    EXPECT_FALSE(result.has_value());
+
+    volatile char scratch[4096];
+    for (auto& c : scratch) {
+        c = 0x55;
+    }
+
+    kill(ioc_pid_, SIGCONT);
+    std::this_thread::sleep_for(500ms);
+
+    result = channel.get<pace::Enum>();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->index, 0);
+    EXPECT_EQ(result->choice, "Zero");
+}
+
+TEST_F(SoftIocFixture, mbbo_GetPendingAtDestroy) {
+    pace::Context ctxt;
+    {
+        pace::CAChannel channel("pace:test:mbbo.VAL");
+        wait_connect(channel);
+        ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
+
+        pause_ioc(ioc_pid_);
+        EXPECT_FALSE(channel.get<pace::Enum>(0.2).has_value());
+        EXPECT_FALSE(channel.get<double>(0.2).has_value());
+    }
+    kill(ioc_pid_, SIGCONT);
+    std::this_thread::sleep_for(500ms);
+}
+
+TEST_F(SoftIocFixture, mbbo_GetDisconnect) {
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:mbbo.VAL");
+
+    wait_connect(channel);
+    ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
+
+    pause_ioc(ioc_pid_);
+    pid_t pid = ioc_pid_;
+    std::thread killer([pid] {
+        std::this_thread::sleep_for(300ms);
+        kill(pid, SIGKILL);
+    });
+
+    auto start = std::chrono::steady_clock::now();
+    auto result = channel.get<double>(5.0);
+    auto elapsed = std::chrono::steady_clock::now() - start;
+    killer.join();
+
+    int status;
+    waitpid(ioc_pid_, &status, 0);
+    ioc_pid_ = -1;
+
+    EXPECT_FALSE(result.has_value());
+    EXPECT_LT(elapsed, 3s);
+}
