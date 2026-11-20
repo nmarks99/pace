@@ -1,9 +1,11 @@
 #pragma once
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstring>
 #include <iomanip>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -65,6 +67,13 @@ std::optional<T> convert(const ValueVariant& v, int precision = 4) {
     // both arithmetic types, so we cast.
     if constexpr (std::is_arithmetic_v<T>) {
         if (auto* d = std::get_if<double>(&v)) {
+            if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>) {
+                constexpr double hi = static_cast<double>(std::numeric_limits<T>::max()) + 1.0;
+                constexpr double lo = std::is_signed_v<T> ? -hi : 0.0;
+                if (!std::isfinite(*d) || std::trunc(*d) < lo || std::trunc(*d) >= hi) {
+                    return std::nullopt;
+                }
+            }
             return static_cast<T>(*d);
         }
         if (auto* i = std::get_if<int>(&v)) {

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <cmath>
 #include "pace.hpp"
 
 using pace::detail::convert;
@@ -124,4 +125,27 @@ TEST(Convert, EnumToVectorReturnsNullopt) {
     ValueVariant v{e};
     EXPECT_FALSE(convert<std::vector<double>>(v).has_value());
     EXPECT_FALSE(convert<std::vector<int>>(v).has_value());
+}
+
+TEST(Convert, DoubleNonFiniteToIntReturnsNullopt) {
+    EXPECT_FALSE(convert<int>(ValueVariant{std::nan("")}).has_value());
+    EXPECT_FALSE(convert<int>(ValueVariant{std::numeric_limits<double>::infinity()}).has_value());
+    EXPECT_FALSE(convert<int>(ValueVariant{-std::numeric_limits<double>::infinity()}).has_value());
+}
+
+TEST(Convert, DoubleOutOfRangeToIntReturnsNullopt) {
+    EXPECT_FALSE(convert<int>(ValueVariant{1e20}).has_value());
+    EXPECT_FALSE(convert<int>(ValueVariant{-1e20}).has_value());
+    EXPECT_FALSE(convert<int>(ValueVariant{2147483648.0}).has_value());
+    EXPECT_FALSE(convert<int>(ValueVariant{-2147483649.0}).has_value());
+}
+
+TEST(Convert, DoubleAtIntLimits) {
+    EXPECT_EQ(convert<int>(ValueVariant{2147483647.9}).value(), 2147483647);
+    EXPECT_EQ(convert<int>(ValueVariant{-2147483648.9}).value(), -2147483647 - 1);
+}
+
+TEST(Convert, DoubleNonFiniteToDouble) {
+    EXPECT_TRUE(std::isnan(convert<double>(ValueVariant{std::nan("")}).value()));
+    EXPECT_FALSE(convert<std::string>(ValueVariant{std::nan("")}).value().empty());
 }

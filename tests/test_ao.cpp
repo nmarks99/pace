@@ -1,4 +1,5 @@
 #include "test_helpers.hpp"
+#include <cmath>
 
 TEST_F(SoftIocFixture, ao_BindDouble) {
     pace::Context ctxt;
@@ -130,4 +131,36 @@ TEST_F(SoftIocFixture, ao_NoMonitorUntilBind) {
 
     ASSERT_TRUE(wait_sync(channel)) << "No monitor update after bind()";
     EXPECT_DOUBLE_EQ(value, 3.14);
+}
+
+TEST_F(SoftIocFixture, ao_BindIntNonFiniteAndOutOfRange) {
+    pace::Context ctxt;
+    pace::CAChannel channel("pace:test:ao.VAL");
+
+    wait_connect(channel);
+    ASSERT_TRUE(channel.connected()) << "Channel did not connect within timeout";
+
+    int value = 0;
+    double dvalue = 0.0;
+    channel.bind(value);
+    channel.bind(dvalue);
+
+    ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
+    EXPECT_EQ(value, 3);
+
+    channel.put(std::nan(""));
+    ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
+    EXPECT_TRUE(std::isnan(dvalue));
+    EXPECT_EQ(value, 3);
+    EXPECT_FALSE(channel.get<int>().has_value());
+
+    channel.put(1e20);
+    ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
+    EXPECT_DOUBLE_EQ(dvalue, 1e20);
+    EXPECT_EQ(value, 3);
+    EXPECT_FALSE(channel.peek<int>().has_value());
+
+    channel.put(-7.9);
+    ASSERT_TRUE(wait_sync(channel)) << "No monitor update received within timeout";
+    EXPECT_EQ(value, -7);
 }

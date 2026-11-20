@@ -45,7 +45,7 @@ class SoftIocFixture : public ::testing::Test {
     void TearDown() override {
         // ctx_.reset();
         if (ioc_pid_ > 0) {
-            kill(ioc_pid_, SIGTERM);
+            kill(ioc_pid_, SIGKILL);
             int status;
             waitpid(ioc_pid_, &status, 0);
         }
@@ -78,7 +78,7 @@ class SoftIocPVAFixture : public ::testing::Test {
 
     void stop_ioc() {
         if (ioc_pid_ > 0) {
-            kill(ioc_pid_, SIGTERM);
+            kill(ioc_pid_, SIGKILL);
             int status;
             waitpid(ioc_pid_, &status, 0);
             ioc_pid_ = -1;
