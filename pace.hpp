@@ -165,6 +165,53 @@ struct MonitorSlot : MonitorSlotBase {
     }
 };
 
+/// \brief Shared reference to the CA client context of the current thread.
+///
+/// CA has one context per thread. All pace::Context objects in a thread share one
+/// CAContextRef. The CA context is destroyed only if pace created it, when the last
+/// reference is released. A context created by the application is never destroyed.
+class CAContextRef {
+  public:
+    static std::shared_ptr<CAContextRef> acquire() {
+        thread_local std::weak_ptr<CAContextRef> current;
+        if (auto ref = current.lock()) {
+            return ref;
+        }
+        auto ref = std::shared_ptr<CAContextRef>(new CAContextRef());
+        current = ref;
+        return ref;
+    }
+
+    ~CAContextRef() {
+        if (owned_ && ca_current_context() == ctx_) {
+            ca_context_destroy();
+        }
+    }
+
+    CAContextRef(const CAContextRef&) = delete;
+    CAContextRef& operator=(const CAContextRef&) = delete;
+
+  private:
+    ca_client_context* ctx_ = nullptr;
+    bool owned_ = false;
+
+    CAContextRef() {
+        ctx_ = ca_current_context();
+        if (ctx_ && !ca_preemtive_callback_is_enabled()) {
+            throw std::runtime_error("pace requires a preemptive CA context: " +
+                                     std::string(ca_message(ECA_NOTTHREADED)));
+        }
+        if (!ctx_) {
+            int status = ca_context_create(ca_enable_preemptive_callback);
+            if (status != ECA_NORMAL) {
+                throw std::runtime_error("ca_context_create: " + std::string(ca_message(status)));
+            }
+            ctx_ = ca_current_context();
+            owned_ = true;
+        }
+    }
+};
+
 } // namespace detail
 
 /// \brief Abstract base class for a channel bound to a single PV.
@@ -915,8 +962,7 @@ class Context {
   public:
     Context(const std::string& default_protocol = "ca") : default_protocol_(default_protocol) {
         if (default_protocol_ == "ca") {
-            SEVCHK(ca_context_create(ca_enable_preemptive_callback), "ca_context_create");
-            ca_initialized_ = true;
+            ca_ctx_ = detail::CAContextRef::acquire();
         } else if (default_protocol_ == "pva") {
             pvxs_ctxt_ = pvxs::client::Context::fromEnv();
             pva_initialized_ = true;
@@ -927,9 +973,6 @@ class Context {
 
     ~Context() {
         channel_map_.clear();
-        if (ca_initialized_) {
-            ca_context_destroy();
-        }
     }
 
     // Delete copy constructor and copy assignment operator
@@ -1092,7 +1135,7 @@ class Context {
   private:
     std::mutex mutex_;
     const std::string default_protocol_ = "ca";
-    bool ca_initialized_ = false;
+    std::shared_ptr<detail::CAContextRef> ca_ctx_;
     bool pva_initialized_ = false;
     std::optional<pvxs::client::Context> pvxs_ctxt_;
     std::unordered_map<std::string, std::unique_ptr<ChannelBase>> channel_map_;
@@ -1121,9 +1164,8 @@ class Context {
         auto it = channel_map_.find(pv_name);
         if (it == channel_map_.end()) {
             if (protocol == "ca") {
-                if (!ca_initialized_) {
-                    SEVCHK(ca_context_create(ca_enable_preemptive_callback), "ca_context_create");
-                    ca_initialized_ = true;
+                if (!ca_ctx_) {
+                    ca_ctx_ = detail::CAContextRef::acquire();
                 }
                 it = channel_map_.emplace(pv_name, std::make_unique<CAChannel>(pv_name)).first;
             } else if (protocol == "pva") {
