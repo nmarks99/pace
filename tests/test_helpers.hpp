@@ -11,7 +11,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "pace.hpp"
+#include <pace/pace.hpp>
 
 using namespace std::chrono_literals;
 

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <cmath>
-#include "pace.hpp"
+#include <pace/pace.hpp>
 
 using pace::detail::convert;
 using pace::detail::ValueVariant;

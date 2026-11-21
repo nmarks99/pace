@@ -12,13 +12,31 @@ is tailored towards single-threaded applications with a "main loop".
 - [EPICS Base](https://epics-controls.org/)
 - [PVXS](https://github.com/epics-base/pvxs)
 
+## Usage
+
+Copy `pace/pace.hpp` into your project, or use CMake `FetchContent`:
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(pace
+    GIT_REPOSITORY https://github.com/nmarks99/pace.git
+    GIT_TAG        master
+)
+FetchContent_MakeAvailable(pace)
+
+target_link_libraries(myapp PRIVATE pace::pace)
+```
+
+The `pace::pace` target only adds the include path. Your application must add the
+EPICS Base and PVXS include paths and link `ca`, `Com` and `pvxs` itself.
+
 ## Example
 
 Bind local variables to PVs and call `sync()` at the start of your main loop
 to sync the latest PV values to your local variables:
 
 ```cpp
-#include "pace.hpp"
+#include <pace/pace.hpp>
 
 int main() {
     pace::Context ctx;

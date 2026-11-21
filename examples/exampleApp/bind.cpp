@@ -4,7 +4,7 @@
 #include <thread>
 #include <chrono>
 
-#include "pace.hpp"
+#include <pace/pace.hpp>
 
 // Used to catch ctrl+c and fail gracefully.
 volatile std::sig_atomic_t g_signal_caught = 0;
