@@ -1097,6 +1097,19 @@ class Context {
     /// \overload
     ChannelBase& operator[](const std::string& pv_name) { return get_channel(pv_name); }
 
+    /// \brief Returns the PVXS client context used for PVA channels.
+    ///
+    /// Creates the context if it does not exist yet. The returned handle shares
+    /// connections and worker threads with this Context.
+    pvxs::client::Context pva_context() {
+        std::lock_guard lock(mutex_);
+        if (!pva_initialized_) {
+            pvxs_ctxt_ = pvxs::client::Context::fromEnv();
+            pva_initialized_ = true;
+        }
+        return *pvxs_ctxt_;
+    }
+
     /// \brief Write a value to a PV (fire-and-forget).
     ///
     /// The PV must have been added with connect() first.
