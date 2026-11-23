@@ -264,6 +264,15 @@ class ChannelBase {
         return put_var(detail::ValueVariant(std::string(value)), field_path);
     }
 
+    /// \brief Write a pvxs::Value to the PV (PVA only).
+    ///
+    /// The value is assigned to the field at field_path, or to the root if
+    /// field_path is empty. Only marked fields are sent. Returns false for CA.
+    /// \overload
+    bool put(const pvxs::Value& value, const std::string& field_path = "") {
+        return put_pvxs_value(value, field_path);
+    }
+
     /// \brief Synchronous get. Fetches the current value from the IOC.
     ///
     /// Dispatches to the protocol-specific get_var() override. Unlike peek(),
@@ -271,16 +280,24 @@ class ChannelBase {
     ///
     /// \param timeout Timeout in seconds for the get operation.
     /// \return The value as std::optional<T>, or std::nullopt on failure/timeout.
+    /// For T = pvxs::Value (PVA only), returns the whole structure by default.
     template <typename T>
     std::optional<T> get(double timeout = 1.0) {
-        detail::ValueVariant value = get_var("value", timeout);
-        return detail::convert<T>(value);
+        if constexpr (std::is_same_v<T, pvxs::Value>) {
+            return get_pvxs_value("", timeout);
+        } else {
+            return get<T>("value", timeout);
+        }
     }
 
     template <typename T>
     std::optional<T> get(const std::string& field_path, double timeout = 1.0) {
-        detail::ValueVariant value = get_var(field_path, timeout);
-        return detail::convert<T>(value);
+        if constexpr (std::is_same_v<T, pvxs::Value>) {
+            return get_pvxs_value(field_path, timeout);
+        } else {
+            detail::ValueVariant value = get_var(field_path, timeout);
+            return detail::convert<T>(value);
+        }
     }
 
     /// \brief Bind a user variable to receive monitor updates from this channel.
@@ -361,6 +378,12 @@ class ChannelBase {
 
     /// \brief CA/PVA specific get implementation.
     virtual detail::ValueVariant get_var(const std::string& field_path, double timeout) = 0;
+
+    /// \brief pvxs::Value put. Only supported by PVA.
+    virtual bool put_pvxs_value(const pvxs::Value&, const std::string&) { return false; }
+
+    /// \brief pvxs::Value get. Only supported by PVA.
+    virtual std::optional<pvxs::Value> get_pvxs_value(const std::string&, double) { return std::nullopt; }
 
     /// \brief Informs the CA/PVAChannel to create a monitor.
     virtual void enable_monitor() = 0;
@@ -545,7 +568,7 @@ class CAChannel : public ChannelBase {
             std::lock_guard lock(pending_mtx_);
             pending_gets_.emplace(req.get(), req);
         }
-        if (ca_array_get_callback(type, 1, channel_id_, get_callback, req.get()) != ECA_NORMAL) {
+        if (ca_array_get_callback(type, 0, channel_id_, get_callback, req.get()) != ECA_NORMAL) {
             std::lock_guard lock(pending_mtx_);
             pending_gets_.erase(req.get());
             return {};
@@ -596,6 +619,8 @@ class CAChannel : public ChannelBase {
                 e.index = static_cast<int>(data->value);
                 e.choice = (data->value < e.choices.size()) ? e.choices[data->value] : std::string();
                 value = std::move(e);
+            } else if (ca_element_count(evt.chid) > 1) {
+                value = get_array_event(evt);
             } else {
                 value = get_scalar_event(evt);
             }
@@ -918,6 +943,50 @@ class PVAChannel : public ChannelBase {
         return true;
     }
 
+    /// \brief PVA put of a pvxs::Value. Fire-and-forget like put_var().
+    ///
+    /// The value is cloned so the caller may modify it after this returns.
+    bool put_pvxs_value(const pvxs::Value& value, const std::string& field_path) override {
+        if (!connected() || !value) {
+            return false;
+        }
+        auto put_builder = ctx_.put(pv_name_).fetchPresent(false).build(
+            [src = value.clone(), field_path](pvxs::Value&& proto) {
+                if (field_path.empty()) {
+                    proto.assign(src);
+                } else {
+                    proto.lookup(field_path).assign(src);
+                }
+                return std::move(proto);
+            });
+        std::vector<std::shared_ptr<pvxs::client::Operation>> done;
+        {
+            std::lock_guard lock(put_mtx_);
+            done.swap(done_puts_);
+            uint64_t id = ++put_seq_;
+            puts_.emplace(id, put_builder.result([this, id](pvxs::client::Result&&) { put_done(id); }).exec());
+        }
+        return true;
+    }
+
+    /// \brief PVA get of a pvxs::Value. Returns the root if field_path is empty.
+    std::optional<pvxs::Value> get_pvxs_value(const std::string& field_path, double timeout) override {
+        if (!connected()) {
+            return std::nullopt;
+        }
+        try {
+            auto result = ctx_.get(pv_name_).exec()->wait(timeout);
+            if (field_path.empty()) {
+                return result;
+            }
+            if (auto field = result[field_path]) {
+                return field.clone();
+            }
+        } catch (...) {
+        }
+        return std::nullopt;
+    }
+
     /// \brief PVA-specific get implementation. Fetches the value via pvxs::client::Context::get.
     detail::ValueVariant get_var(const std::string& field_path, double timeout) override {
         if (!connected()) {
@@ -970,6 +1039,16 @@ class PVAChannel : public ChannelBase {
                 case pvxs::TypeCode::String:
                     var = val.as<std::string>();
                     break;
+                case pvxs::TypeCode::Float64A: {
+                    auto arr = val.as<pvxs::shared_array<const double>>();
+                    var = std::vector<double>(arr.begin(), arr.end());
+                    break;
+                }
+                case pvxs::TypeCode::Int32A: {
+                    auto arr = val.as<pvxs::shared_array<const int32_t>>();
+                    var = std::vector<int>(arr.begin(), arr.end());
+                    break;
+                }
                 default:
                     var = {};
                 }
@@ -1119,6 +1198,12 @@ class Context {
     /// \param value    The value to write.
     template <typename T>
     bool put(const std::string& pv_name, const T& value, const std::string& field_path = "value") {
+        return get_channel(pv_name).put(value, field_path);
+    }
+
+    /// \brief Write a pvxs::Value to a PV (PVA only, fire-and-forget).
+    /// \overload
+    bool put(const std::string& pv_name, const pvxs::Value& value, const std::string& field_path = "") {
         return get_channel(pv_name).put(value, field_path);
     }
 

@@ -1,4 +1,5 @@
 #include "test_helpers.hpp"
+#include <pvxs/nt.h>
 
 TEST_F(SoftIocPVAFixture, pva_BindDouble) {
     pace::Context ctx("pva");
@@ -237,4 +238,124 @@ TEST_F(SoftIocPVAFixture, pva_DestroyWithStalledPut) {
 
     kill(ioc_pid_, SIGCONT);
     EXPECT_LT(elapsed, 2s);
+}
+
+static bool wait_double(pace::Context& ctx, const std::string& pv, double expected, int timeout_sec = 5) {
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (ctx.get<double>(pv).value_or(0.0) == expected) {
+            return true;
+        }
+        std::this_thread::sleep_for(50ms);
+    }
+    return false;
+}
+
+TEST_F(SoftIocPVAFixture, pva_PvaContextShared) {
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:ao", 5.0);
+
+    auto a = ctx.pva_context();
+    ASSERT_TRUE(a);
+    auto n = a.use_count();
+    auto b = ctx.pva_context();
+    EXPECT_EQ(a.use_count(), n + 1);
+
+    auto result = a.get("pace:test:ao").exec()->wait(5.0);
+    EXPECT_DOUBLE_EQ(result["value"].as<double>(), 3.14);
+}
+
+TEST_F(SoftIocPVAFixture, pva_PvaContextFromCAContext) {
+    pace::Context ctx("ca");
+    auto pva = ctx.pva_context();
+    ASSERT_TRUE(pva);
+
+    auto result = pva.get("pace:test:longout").exec()->wait(5.0);
+    EXPECT_EQ(result["value"].as<int>(), 42);
+
+    ctx.connect("pva://pace:test:ao", 5.0);
+    auto after = ctx.pva_context();
+    auto n = pva.use_count();
+    auto copy = after;
+    EXPECT_EQ(pva.use_count(), n + 1);
+}
+
+TEST_F(SoftIocPVAFixture, pva_GetValueRoot) {
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:ao", 5.0);
+    ctx.connect("pace:test:Position", 5.0);
+
+    auto ao = ctx.get<pvxs::Value>("pace:test:ao");
+    ASSERT_TRUE(ao);
+    EXPECT_DOUBLE_EQ((*ao)["value"].as<double>(), 3.14);
+
+    auto pos = ctx.get<pvxs::Value>("pace:test:Position");
+    ASSERT_TRUE(pos);
+    EXPECT_DOUBLE_EQ((*pos)["X.value"].as<double>(), 1.11);
+    EXPECT_DOUBLE_EQ((*pos)["Y.value"].as<double>(), 2.22);
+    EXPECT_DOUBLE_EQ((*pos)["Z.value"].as<double>(), 3.33);
+}
+
+TEST_F(SoftIocPVAFixture, pva_GetValueField) {
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:Position", 5.0);
+
+    auto y = ctx.get<pvxs::Value>("pace:test:Position", "Y");
+    ASSERT_TRUE(y);
+    EXPECT_DOUBLE_EQ((*y)["value"].as<double>(), 2.22);
+
+    auto z = ctx.get<pvxs::Value>("pace:test:Position", "Z.value");
+    ASSERT_TRUE(z);
+    EXPECT_DOUBLE_EQ(z->as<double>(), 3.33);
+
+    EXPECT_FALSE(ctx.get<pvxs::Value>("pace:test:Position", "nonexistent"));
+}
+
+TEST_F(SoftIocPVAFixture, pva_PutValueRoot) {
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:ao", 5.0);
+
+    auto val = pvxs::nt::NTScalar{pvxs::TypeCode::Float64}.create();
+    val["value"] = 6.28;
+    ASSERT_TRUE(ctx.put("pace:test:ao", val));
+    EXPECT_TRUE(wait_double(ctx, "pace:test:ao", 6.28));
+}
+
+TEST_F(SoftIocPVAFixture, pva_PutValueField) {
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:ao", 5.0);
+
+    auto val = pvxs::TypeDef(pvxs::TypeCode::Float64).create();
+    val = 1.5;
+    ASSERT_TRUE(ctx.put("pace:test:ao", val, "value"));
+    EXPECT_TRUE(wait_double(ctx, "pace:test:ao", 1.5));
+}
+
+TEST_F(SoftIocPVAFixture, pva_PutValueIsCopied) {
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:ao", 5.0);
+
+    auto val = pvxs::nt::NTScalar{pvxs::TypeCode::Float64}.create();
+    val["value"] = 7.0;
+    ASSERT_TRUE(ctx.put("pace:test:ao", val));
+    val["value"] = 99.0;
+    EXPECT_TRUE(wait_double(ctx, "pace:test:ao", 7.0));
+}
+
+TEST_F(SoftIocPVAFixture, pva_PutEmptyValueFails) {
+    pace::Context ctx("pva");
+    ctx.connect("pace:test:ao", 5.0);
+    EXPECT_FALSE(ctx.put("pace:test:ao", pvxs::Value{}));
+}
+
+TEST_F(SoftIocPVAFixture, pva_ValueOverloadsFailOnCA) {
+    pace::Context ctx("ca");
+    ctx.connect("pace:test:ao", 5.0);
+
+    EXPECT_FALSE(ctx.get<pvxs::Value>("pace:test:ao"));
+
+    auto val = pvxs::nt::NTScalar{pvxs::TypeCode::Float64}.create();
+    val["value"] = 6.28;
+    EXPECT_FALSE(ctx.put("pace:test:ao", val));
+    EXPECT_DOUBLE_EQ(ctx.get<double>("pace:test:ao").value_or(0.0), 3.14);
 }
